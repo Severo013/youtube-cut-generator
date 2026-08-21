@@ -220,6 +220,9 @@ __marimo__/
 # podcast-indexer local data
 outputs/
 *.mp3
+*.mp4
+*.mpeg
+*.mpga
 *.wav
 *.m4a
 *.aac
@@ -227,3 +230,4 @@ outputs/
 *.ogg
 *.opus
 *.wma
+*.webm

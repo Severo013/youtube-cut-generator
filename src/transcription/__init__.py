@@ -1,6 +1,25 @@
 """Speech-to-Text provider adapters."""
 
-from .base import Transcriber
+from .base import (
+    AudioFileTooLargeError,
+    EmptyTranscriptionError,
+    EmptyTranscriptTextError,
+    InvalidAudioFileError,
+    Transcriber,
+    TranscriptionConfigurationError,
+    TranscriptionError,
+    TranscriptionProviderError,
+    UnsupportedAudioFormatError,
+)
 
-__all__ = ["Transcriber"]
-
+__all__ = [
+    "AudioFileTooLargeError",
+    "EmptyTranscriptionError",
+    "EmptyTranscriptTextError",
+    "InvalidAudioFileError",
+    "Transcriber",
+    "TranscriptionConfigurationError",
+    "TranscriptionError",
+    "TranscriptionProviderError",
+    "UnsupportedAudioFormatError",
+]
