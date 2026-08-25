@@ -1,25 +1,25 @@
 # podcast-indexer
 
-MVP local em Python para transcrever um arquivo de áudio, normalizar a
-transcrição com timestamps e, futuramente, enviá-la a um indexador. A etapa de
-transcrição usa o SDK oficial da OpenAI; a indexação ainda é um placeholder e
-não faz chamadas de API.
+MVP local em Python para transcrever um arquivo de áudio com timestamps e gerar
+uma decupagem cronológica do episódio.
 
 ## Arquitetura
 
-- `src/models.py`: modelos internos `Transcript`, `TranscriptSegment` e
-  `IndexResult`, sem tipos específicos de providers.
-- `src/transcription/`: contrato `Transcriber`, erros de domínio e adaptador
-  OpenAI.
-- `src/indexing/`: contrato `Indexer` e futuro adaptador OpenAI.
-- `src/prompting.py` e `src/prompts/`: carregamento, template e renderização do
-  prompt de decupagem.
-- `src/pipeline.py`: orquestração e persistência em `outputs/<episódio>/`.
-- `src/config.py`: configuração por `.env` e variáveis de ambiente.
-- `src/cli.py`: ponto de entrada da linha de comando.
+- `src/models.py`: modelos internos independentes de provider (`Transcript` e
+  `IndexResult`).
+- `src/transcription/`: contrato `Transcriber` e adaptador da OpenAI.
+- `src/indexing/`: contrato `Indexer` e adaptador da OpenAI usando Responses API
+  com Structured Outputs.
+- `src/prompting.py`: carregamento e substituição previsível de
+  `{{TRANSCRIPT}}`.
+- `src/prompts/decupagem.md`: prompt editável de decupagem.
+- `src/pipeline.py`: orquestração neutra em relação aos providers e persistência
+  local.
+- `src/cli.py`: comandos de transcrição, processamento completo e reindexação.
 
-As dependências apontam para contratos simples (`Protocol`), portanto um novo
-provider só precisa implementar `transcribe(...)` ou `index(...)`.
+Os providers dependem apenas dos contratos `Transcriber` e `Indexer`. Assim, eles
+podem ser substituídos sem levar tipos do SDK da OpenAI para o restante da
+aplicação.
 
 ## Preparação
 
@@ -32,40 +32,51 @@ python -m pip install -e ".[dev]"
 Copy-Item .env.example .env
 ```
 
-Preencha `OPENAI_API_KEY` apenas no arquivo `.env`, que é ignorado pelo Git.
+Configure `OPENAI_API_KEY` no `.env`. Os modelos são centralizados pelas
+variáveis `TRANSCRIPTION_MODEL` e `INDEX_MODEL`; o indexador usa
+`gpt-5-mini` por padrão. O `.env` é ignorado pelo Git.
 
-## Transcrição isolada
+## Uso
+
+Pipeline completo:
+
+```powershell
+python -m src.cli process "D:\Podcasts\episodio.mp3"
+```
+
+Somente transcrição:
 
 ```powershell
 python -m src.cli transcribe "D:\Podcasts\episodio.mp3"
 ```
 
-É possível escolher outro diretório raiz com `--output-dir`. O comando cria
-`outputs/<episódio>/` com:
+Reindexação sem nova chamada de transcrição:
 
-- `transcript.raw.json`: resposta serializável do provider para debug;
-- `transcript.json`: modelo interno normalizado;
-- `transcript.txt`: segmentos legíveis com timestamps `HH:MM:SS`.
+```powershell
+python -m src.cli index "outputs\episodio\transcript.json"
+```
 
-A chamada usa o modelo definido por `TRANSCRIPTION_MODEL`, português como
-idioma preferencial, resposta `verbose_json` e timestamps por segmento. O valor
-padrão é `whisper-1`. Nenhum parâmetro de chunking é enviado nessa chamada.
+Os comandos que recebem áudio aceitam `--output-dir`. O processamento completo
+cria `outputs/<episódio>/` contendo:
 
-Segundo a documentação oficial atual, o endpoint de transcrição aceita arquivos
-de até 25 MB. O aplicativo rejeita antecipadamente arquivos maiores com uma
-mensagem clara. Ainda não há splitting, compressão ou chunking manual; episódios
-acima desse limite precisarão de preprocessing em uma etapa futura. A indexação
-com modelo de linguagem permanece não implementada.
+- `transcript.raw.json`: resposta serializável do provider de transcrição;
+- `transcript.json`: transcrição interna normalizada;
+- `transcript.txt`: falas com timestamps;
+- `index.json`: `IndexResult` normalizado;
+- `index.md`: visualização legível dos assuntos.
+
+O comando `index` grava `index.json` e `index.md` ao lado do `transcript.json`, o
+que permite editar o prompt e reindexar sem pagar novamente pela transcrição.
 
 ## Testes
 
-Sem instalar ferramentas adicionais:
+Todos os testes usam providers simulados ou mocks e não fazem chamadas pagas:
 
 ```powershell
 python -m unittest discover -s tests -v
 ```
 
-Ou, após instalar as dependências de desenvolvimento:
+Com as dependências de desenvolvimento instaladas, também é possível usar:
 
 ```powershell
 python -m pytest

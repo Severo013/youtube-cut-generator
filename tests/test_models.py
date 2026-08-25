@@ -2,7 +2,13 @@ import unittest
 
 from pydantic import ValidationError
 
-from src.models import Transcript, TranscriptSegment, seconds_to_timestamp
+from src.models import (
+    IndexBlock,
+    IndexResult,
+    Transcript,
+    TranscriptSegment,
+    seconds_to_timestamp,
+)
 
 
 class TimestampTests(unittest.TestCase):
@@ -61,6 +67,42 @@ class TranscriptModelTests(unittest.TestCase):
     def test_rejects_non_finite_segment_timestamp(self) -> None:
         with self.assertRaises(ValidationError):
             TranscriptSegment(start_seconds=0, end_seconds=float("inf"), text="Teste")
+
+
+class IndexModelTests(unittest.TestCase):
+    def test_rejects_timestamp_that_does_not_match_seconds(self) -> None:
+        with self.assertRaises(ValidationError):
+            IndexBlock(
+                start_seconds=5,
+                end_seconds=10,
+                start_timestamp="00:00:06",
+                end_timestamp="00:00:10",
+                topic="Tema",
+                summary="Resumo",
+            )
+
+    def test_rejects_blocks_out_of_chronological_order(self) -> None:
+        with self.assertRaises(ValidationError):
+            IndexResult(
+                blocks=[
+                    IndexBlock(
+                        start_seconds=10,
+                        end_seconds=12,
+                        start_timestamp="00:00:10",
+                        end_timestamp="00:00:12",
+                        topic="Segundo",
+                        summary="Resumo",
+                    ),
+                    IndexBlock(
+                        start_seconds=0,
+                        end_seconds=5,
+                        start_timestamp="00:00:00",
+                        end_timestamp="00:00:05",
+                        topic="Primeiro",
+                        summary="Resumo",
+                    ),
+                ]
+            )
 
 
 if __name__ == "__main__":

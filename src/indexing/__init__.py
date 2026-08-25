@@ -1,6 +1,17 @@
-"""Transcript indexing provider adapters."""
+"""Transcript indexing contracts and provider errors."""
 
-from .base import Indexer
+from .base import (
+    EmptyIndexResultError,
+    Indexer,
+    IndexingConfigurationError,
+    IndexingError,
+    IndexingProviderError,
+)
 
-__all__ = ["Indexer"]
-
+__all__ = [
+    "EmptyIndexResultError",
+    "Indexer",
+    "IndexingConfigurationError",
+    "IndexingError",
+    "IndexingProviderError",
+]

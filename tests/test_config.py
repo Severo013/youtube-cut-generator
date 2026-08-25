@@ -1,6 +1,6 @@
 import unittest
 
-from src.config import Settings
+from src.config import DEFAULT_INDEX_MODEL, Settings
 
 
 class SettingsTests(unittest.TestCase):
@@ -9,6 +9,7 @@ class SettingsTests(unittest.TestCase):
 
         self.assertEqual(settings.transcription_model, "whisper-1")
         self.assertEqual(settings.transcription_language, "pt")
+        self.assertEqual(settings.index_model, DEFAULT_INDEX_MODEL)
 
 
 if __name__ == "__main__":

@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
-from typing import Any
 
 from pydantic import BaseModel, Field, FiniteFloat, field_validator, model_validator
 
@@ -84,10 +82,43 @@ class Transcript(BaseModel):
         )
 
 
+class IndexBlock(BaseModel):
+    """A chronological topic range in an episode."""
+
+    start_seconds: FiniteFloat = Field(ge=0)
+    end_seconds: FiniteFloat = Field(ge=0)
+    start_timestamp: str = Field(min_length=8)
+    end_timestamp: str = Field(min_length=8)
+    topic: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+
+    @field_validator("start_timestamp", "end_timestamp", "topic", "summary")
+    @classmethod
+    def strip_index_text(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("value cannot be blank")
+        return value
+
+    @model_validator(mode="after")
+    def validate_time_range(self) -> "IndexBlock":
+        if self.end_seconds < self.start_seconds:
+            raise ValueError("end_seconds must be greater than or equal to start_seconds")
+        if self.start_timestamp != seconds_to_timestamp(self.start_seconds):
+            raise ValueError("start_timestamp does not match start_seconds")
+        if self.end_timestamp != seconds_to_timestamp(self.end_seconds):
+            raise ValueError("end_timestamp does not match end_seconds")
+        return self
+
+
 class IndexResult(BaseModel):
     """Structured result returned by an indexing provider."""
 
-    source: str = Field(min_length=1)
-    model: str = Field(min_length=1)
-    index: dict[str, Any]
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    blocks: list[IndexBlock] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_chronological_order(self) -> "IndexResult":
+        starts = [block.start_seconds for block in self.blocks]
+        if starts != sorted(starts):
+            raise ValueError("index blocks must be in chronological order")
+        return self
