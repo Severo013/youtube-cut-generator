@@ -9,6 +9,8 @@ description = "MVP local para transcrição e indexação de podcasts"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "ctranslate2>=4.8.1,<5",
+    "faster-whisper>=1.2.1,<2",
     "openai>=1.99.9,<3",
     "pydantic>=2.7,<3",
 ]

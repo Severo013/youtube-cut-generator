@@ -81,3 +81,28 @@ Com as dependências de desenvolvimento instaladas, também é possível usar:
 ```powershell
 python -m pytest
 ```
+
+## Diagnóstico do faster-whisper (CUDA)
+
+O teste local é isolado do pipeline principal e exige uma GPU NVIDIA com as
+bibliotecas CUDA compatíveis disponíveis no `PATH`. Ele usa `turbo`, CUDA,
+FP16, português e timestamps por segmento, sem fallback para CPU:
+
+```powershell
+python scripts/test_local_whisper.py "D:\Podcasts\amostra.mp3"
+```
+
+Para Blackwell no Windows, use CTranslate2 4.6.3 ou mais recente e o runtime
+CUDA 12.8 ou mais recente dentro da série CUDA 12. O diretório `bin` do CUDA
+deve estar no `PATH` e disponibilizar `cublas64_12.dll` e
+`cublasLt64_12.dll`. A wheel atual do CTranslate2 inclui `cudnn64_9.dll`; o
+Windows também precisa do Microsoft Visual C++ Redistributable atual.
+
+Por padrão, o modelo usa o cache normal do Hugging Face. Para escolher outro
+cache sem gravar modelos nas pastas de outputs, use `--cache-dir` ou a variável
+`FASTER_WHISPER_CACHE_DIR`:
+
+```powershell
+$env:FASTER_WHISPER_CACHE_DIR = "D:\Caches\faster-whisper"
+python scripts/test_local_whisper.py "D:\Podcasts\amostra.mp3"
+```
