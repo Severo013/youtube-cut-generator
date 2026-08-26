@@ -119,6 +119,8 @@ class OpenAITranscriberTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertEqual(raw_json["segments"][0]["start"], 754.2)
+        self.assertEqual(raw_json["provider"], "openai")
+        self.assertEqual(raw_json["model"], "whisper-1")
         self.assertEqual(normalized_json["segments"][0]["start_seconds"], 754.2)
         self.assertEqual(
             readable_text.splitlines()[0],

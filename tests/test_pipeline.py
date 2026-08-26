@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from src.models import IndexBlock, IndexResult, Transcript, TranscriptSegment
 from src.pipeline import PodcastPipeline
@@ -134,9 +135,14 @@ class PipelineTests(unittest.TestCase):
                 prompt_path=prompt_path,
                 output_dir=root / "unused",
             )
-            result = pipeline.index_transcript_file(transcript_path)
+            with patch(
+                "src.transcription.faster_whisper_transcriber."
+                "FasterWhisperTranscriber._get_model"
+            ) as load_whisper:
+                result = pipeline.index_transcript_file(transcript_path)
 
             self.assertEqual(result.blocks[0].topic, "Tema de teste")
+            load_whisper.assert_not_called()
             self.assertIsNotNone(indexer.received_transcript)
             self.assertTrue((root / "index.json").is_file())
             self.assertTrue((root / "index.md").is_file())

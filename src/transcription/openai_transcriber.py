@@ -179,17 +179,21 @@ class OpenAITranscriber:
                 f"Não foi possível acessar o arquivo de áudio: {audio_path}"
             ) from error
 
-    @classmethod
     def _save_artifacts(
-        cls,
+        self,
         response: object,
         transcript: Transcript,
         output_dir: Path,
     ) -> None:
         output_dir.mkdir(parents=True, exist_ok=True)
-        raw_payload = cls._serialize_response(response)
-        cls._write_json(output_dir / "transcript.raw.json", raw_payload)
-        cls._write_json(
+        raw_response = self._serialize_response(response)
+        raw_payload = {
+            **raw_response,
+            "provider": "openai",
+            "model": self._model,
+        }
+        self._write_json(output_dir / "transcript.raw.json", raw_payload)
+        self._write_json(
             output_dir / "transcript.json",
             transcript.model_dump(mode="json"),
         )

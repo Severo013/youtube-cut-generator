@@ -7,7 +7,8 @@ uma decupagem cronológica do episódio.
 
 - `src/models.py`: modelos internos independentes de provider (`Transcript` e
   `IndexResult`).
-- `src/transcription/`: contrato `Transcriber` e adaptador da OpenAI.
+- `src/transcription/`: contrato `Transcriber`, adapters do faster-whisper e da
+  OpenAI, e factory central de seleção do provider.
 - `src/indexing/`: contrato `Indexer` e adaptador da OpenAI usando Responses API
   com Structured Outputs.
 - `src/prompting.py`: carregamento e substituição previsível de
@@ -32,9 +33,31 @@ python -m pip install -e ".[dev]"
 Copy-Item .env.example .env
 ```
 
-Configure `OPENAI_API_KEY` no `.env`. Os modelos são centralizados pelas
-variáveis `TRANSCRIPTION_MODEL` e `INDEX_MODEL`; o indexador usa
-`gpt-5-mini` por padrão. O `.env` é ignorado pelo Git.
+O provider de transcrição padrão é o faster-whisper local. A configuração
+recomendada no `.env` é:
+
+```dotenv
+TRANSCRIPTION_PROVIDER=local
+LOCAL_WHISPER_MODEL=turbo
+LOCAL_WHISPER_DEVICE=cuda
+LOCAL_WHISPER_COMPUTE_TYPE=float16
+TRANSCRIPTION_LANGUAGE=pt
+
+OPENAI_API_KEY=
+TRANSCRIPTION_MODEL=whisper-1
+INDEX_MODEL=gpt-5-mini
+```
+
+`OPENAI_API_KEY` não é necessária para `transcribe` com o provider local. Ela
+continua obrigatória para `process` e `index`, pois a indexação usa
+`gpt-5-mini`. O `.env` é ignorado pelo Git.
+
+Para voltar à transcrição pela OpenAI sem alterar código:
+
+```dotenv
+TRANSCRIPTION_PROVIDER=openai
+TRANSCRIPTION_MODEL=whisper-1
+```
 
 ## Uso
 
@@ -59,7 +82,8 @@ python -m src.cli index "outputs\episodio\transcript.json"
 Os comandos que recebem áudio aceitam `--output-dir`. O processamento completo
 cria `outputs/<episódio>/` contendo:
 
-- `transcript.raw.json`: resposta serializável do provider de transcrição;
+- `transcript.raw.json`: metadados e segmentos serializáveis do provider de
+  transcrição, identificados por `provider` e `model`;
 - `transcript.json`: transcrição interna normalizada;
 - `transcript.txt`: falas com timestamps;
 - `index.json`: `IndexResult` normalizado;
@@ -84,7 +108,7 @@ python -m pytest
 
 ## Diagnóstico do faster-whisper (CUDA)
 
-O teste local é isolado do pipeline principal e exige uma GPU NVIDIA com as
+O teste diagnóstico é isolado do pipeline principal e exige uma GPU NVIDIA com as
 bibliotecas CUDA compatíveis disponíveis no `PATH`. Ele usa `turbo`, CUDA,
 FP16, português e timestamps por segmento, sem fallback para CPU:
 

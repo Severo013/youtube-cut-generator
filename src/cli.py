@@ -10,7 +10,7 @@ from src.indexing import IndexingError
 from src.indexing.openai_indexer import OpenAIIndexer
 from src.pipeline import PodcastPipeline
 from src.transcription import TranscriptionError
-from src.transcription.openai_transcriber import OpenAITranscriber
+from src.transcription.factory import create_transcriber
 
 
 DEFAULT_OUTPUT_DIR = Path("outputs")
@@ -59,11 +59,10 @@ def run_transcription(audio_path: Path, output_root: Path, settings: Settings) -
     """Execute only Speech-to-Text and return the episode output directory."""
 
     episode_output_dir = output_root / audio_path.stem
-    transcriber = OpenAITranscriber(
-        api_key=settings.openai_api_key,
-        model=settings.transcription_model,
-        language=settings.transcription_language,
+    transcriber = create_transcriber(
+        settings=settings,
         output_dir=episode_output_dir,
+        progress=print,
     )
     print("Validando arquivo")
     print("Transcrevendo")
@@ -77,11 +76,10 @@ def run_process(audio_path: Path, output_root: Path, settings: Settings) -> Path
     """Execute the complete audio-to-index pipeline."""
 
     episode_output_dir = output_root / audio_path.stem
-    transcriber = OpenAITranscriber(
-        api_key=settings.openai_api_key,
-        model=settings.transcription_model,
-        language=settings.transcription_language,
+    transcriber = create_transcriber(
+        settings=settings,
         output_dir=episode_output_dir,
+        progress=print,
     )
     indexer = OpenAIIndexer(
         api_key=settings.openai_api_key,

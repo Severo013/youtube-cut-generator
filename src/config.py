@@ -10,13 +10,25 @@ from pydantic import BaseModel, Field, SecretStr
 
 DEFAULT_TRANSCRIPTION_MODEL = "whisper-1"
 DEFAULT_INDEX_MODEL = "gpt-5-mini"
+DEFAULT_TRANSCRIPTION_PROVIDER = "local"
+DEFAULT_LOCAL_WHISPER_MODEL = "turbo"
+DEFAULT_LOCAL_WHISPER_DEVICE = "cuda"
+DEFAULT_LOCAL_WHISPER_COMPUTE_TYPE = "float16"
 
 
 class Settings(BaseModel):
     """Runtime settings with safe, non-secret defaults."""
 
     openai_api_key: SecretStr | None = None
+    transcription_provider: str = Field(
+        default=DEFAULT_TRANSCRIPTION_PROVIDER, min_length=1
+    )
     transcription_model: str = Field(default=DEFAULT_TRANSCRIPTION_MODEL, min_length=1)
+    local_whisper_model: str = Field(default=DEFAULT_LOCAL_WHISPER_MODEL, min_length=1)
+    local_whisper_device: str = Field(default=DEFAULT_LOCAL_WHISPER_DEVICE, min_length=1)
+    local_whisper_compute_type: str = Field(
+        default=DEFAULT_LOCAL_WHISPER_COMPUTE_TYPE, min_length=1
+    )
     index_model: str = Field(default=DEFAULT_INDEX_MODEL, min_length=1)
     transcription_language: str = Field(default="pt", min_length=1)
 
@@ -51,7 +63,19 @@ def load_settings(dotenv_path: str | Path = ".env") -> Settings:
 
     return Settings(
         openai_api_key=get("OPENAI_API_KEY") or None,
+        transcription_provider=get(
+            "TRANSCRIPTION_PROVIDER", DEFAULT_TRANSCRIPTION_PROVIDER
+        ),
         transcription_model=get("TRANSCRIPTION_MODEL", DEFAULT_TRANSCRIPTION_MODEL),
+        local_whisper_model=get(
+            "LOCAL_WHISPER_MODEL", DEFAULT_LOCAL_WHISPER_MODEL
+        ),
+        local_whisper_device=get(
+            "LOCAL_WHISPER_DEVICE", DEFAULT_LOCAL_WHISPER_DEVICE
+        ),
+        local_whisper_compute_type=get(
+            "LOCAL_WHISPER_COMPUTE_TYPE", DEFAULT_LOCAL_WHISPER_COMPUTE_TYPE
+        ),
         index_model=get("INDEX_MODEL", DEFAULT_INDEX_MODEL),
         transcription_language=get("TRANSCRIPTION_LANGUAGE", "pt"),
     )
