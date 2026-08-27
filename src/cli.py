@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from pathlib import Path
 
 from src.config import Settings, load_settings
 from src.indexing import IndexingError
 from src.indexing.openai_indexer import OpenAIIndexer
+from src.input_resolution import InputResolutionError, InputResolver
 from src.pipeline import PodcastPipeline
 from src.transcription import TranscriptionError
 from src.transcription.factory import create_transcriber
@@ -29,7 +31,7 @@ def _add_output_argument(parser: argparse.ArgumentParser) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="podcast-indexer",
-        description="Transcreve e indexa localmente episódios de podcast.",
+        description="Transcreve e indexa episódios de podcast.",
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
@@ -37,14 +39,20 @@ def build_parser() -> argparse.ArgumentParser:
         "transcribe",
         help="Executa somente a etapa de transcrição",
     )
-    transcribe_parser.add_argument("audio_path", type=Path)
+    transcribe_parser.add_argument(
+        "audio_source",
+        help="Caminho de arquivo local ou URL HTTP/HTTPS",
+    )
     _add_output_argument(transcribe_parser)
 
     process_parser = commands.add_parser(
         "process",
         help="Executa transcrição e indexação",
     )
-    process_parser.add_argument("audio_path", type=Path)
+    process_parser.add_argument(
+        "audio_source",
+        help="Caminho de arquivo local ou URL HTTP/HTTPS",
+    )
     _add_output_argument(process_parser)
 
     index_parser = commands.add_parser(
@@ -55,44 +63,80 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def run_transcription(audio_path: Path, output_root: Path, settings: Settings) -> Path:
+def _transcription_progress(settings: Settings) -> Callable[[str], None]:
+    provider = settings.transcription_provider.strip().lower()
+
+    def report(message: str) -> None:
+        if message == "Transcrevendo":
+            if provider == "local":
+                print("Transcrevendo com faster-whisper...")
+            elif provider == "openai":
+                print("Transcrevendo com OpenAI Whisper...")
+            else:
+                print(message)
+        else:
+            print(message)
+
+    return report
+
+
+def run_transcription(
+    audio_source: str | Path,
+    output_root: Path,
+    settings: Settings,
+    *,
+    resolver: InputResolver | None = None,
+) -> Path:
     """Execute only Speech-to-Text and return the episode output directory."""
 
-    episode_output_dir = output_root / audio_path.stem
-    transcriber = create_transcriber(
-        settings=settings,
-        output_dir=episode_output_dir,
-        progress=print,
-    )
-    print("Validando arquivo")
-    print("Transcrevendo")
-    transcriber.transcribe(audio_path)
-    print("Salvando transcrição")
-    print("Concluído")
+    resolver = resolver or InputResolver(settings=settings, progress=print)
+    with resolver.resolve(audio_source) as resolved:
+        episode_output_dir = output_root / resolved.path.stem
+        transcriber = create_transcriber(
+            settings=settings,
+            output_dir=episode_output_dir,
+            progress=print,
+        )
+        print("Validando arquivo")
+        _transcription_progress(settings)("Transcrevendo")
+        try:
+            transcriber.transcribe(resolved.path)
+        finally:
+            resolved.cleanup()
+        print("Salvando transcrição")
+        print("Concluído")
     return episode_output_dir
 
 
-def run_process(audio_path: Path, output_root: Path, settings: Settings) -> Path:
+def run_process(
+    audio_source: str | Path,
+    output_root: Path,
+    settings: Settings,
+    *,
+    resolver: InputResolver | None = None,
+) -> Path:
     """Execute the complete audio-to-index pipeline."""
 
-    episode_output_dir = output_root / audio_path.stem
-    transcriber = create_transcriber(
-        settings=settings,
-        output_dir=episode_output_dir,
-        progress=print,
-    )
-    indexer = OpenAIIndexer(
-        api_key=settings.openai_api_key,
-        model=settings.index_model,
-    )
-    pipeline = PodcastPipeline(
-        transcriber=transcriber,
-        indexer=indexer,
-        prompt_path=DEFAULT_PROMPT_PATH,
-        output_dir=output_root,
-        progress=print,
-    )
-    pipeline.run(audio_path)
+    resolver = resolver or InputResolver(settings=settings, progress=print)
+    with resolver.resolve(audio_source) as resolved:
+        episode_output_dir = output_root / resolved.path.stem
+        transcriber = create_transcriber(
+            settings=settings,
+            output_dir=episode_output_dir,
+            progress=print,
+        )
+        indexer = OpenAIIndexer(
+            api_key=settings.openai_api_key,
+            model=settings.index_model,
+        )
+        pipeline = PodcastPipeline(
+            transcriber=transcriber,
+            indexer=indexer,
+            prompt_path=DEFAULT_PROMPT_PATH,
+            output_dir=output_root,
+            progress=_transcription_progress(settings),
+        )
+        pipeline.run(resolved.path, after_transcription=resolved.cleanup)
     return episode_output_dir
 
 
@@ -119,12 +163,19 @@ def main() -> int:
 
     try:
         if args.command == "transcribe":
-            output_dir = run_transcription(args.audio_path, args.output_dir, settings)
+            output_dir = run_transcription(args.audio_source, args.output_dir, settings)
         elif args.command == "process":
-            output_dir = run_process(args.audio_path, args.output_dir, settings)
+            output_dir = run_process(args.audio_source, args.output_dir, settings)
         else:
             output_dir = run_indexing(args.transcript_path, settings)
-    except (FileNotFoundError, IndexingError, TranscriptionError, OSError, ValueError) as error:
+    except (
+        FileNotFoundError,
+        IndexingError,
+        InputResolutionError,
+        TranscriptionError,
+        OSError,
+        ValueError,
+    ) as error:
         print(f"Erro: {error}")
         return 1
 

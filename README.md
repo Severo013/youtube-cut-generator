@@ -16,6 +16,8 @@ uma decupagem cronológica do episódio.
 - `src/prompts/decupagem.md`: prompt editável de decupagem.
 - `src/pipeline.py`: orquestração neutra em relação aos providers e persistência
   local.
+- `src/input_resolution.py`: resolve caminhos locais e baixa URLs para um
+  diretório temporário exclusivo usando a API Python do `yt-dlp`.
 - `src/cli.py`: comandos de transcrição, processamento completo e reindexação.
 
 Os providers dependem apenas dos contratos `Transcriber` e `Indexer`. Assim, eles
@@ -33,6 +35,11 @@ python -m pip install -e ".[dev]"
 Copy-Item .env.example .env
 ```
 
+O extra oficial `yt-dlp[default]` é instalado com o projeto e inclui o pacote
+`yt-dlp-ejs`. Para suporte completo ao YouTube, instale também o Deno 2.3 ou
+mais recente e confirme que `deno.exe` está no `PATH`. O Deno é o runtime
+JavaScript recomendado e habilitado por padrão pelo yt-dlp.
+
 O provider de transcrição padrão é o faster-whisper local. A configuração
 recomendada no `.env` é:
 
@@ -46,7 +53,18 @@ TRANSCRIPTION_LANGUAGE=pt
 OPENAI_API_KEY=
 TRANSCRIPTION_MODEL=whisper-1
 INDEX_MODEL=gpt-5-mini
+
+YTDLP_KEEP_TEMP=false
+YTDLP_AUTH_MODE=auto
+YTDLP_BROWSER=firefox
+YTDLP_COOKIES_FILE=
 ```
+
+Os modos de autenticação de URL são `none`, `browser`, `file` e `auto`. Em
+`auto`, o download é tentado primeiro sem cookies e, somente se falhar, ocorre
+uma segunda tentativa. `YTDLP_COOKIES_FILE`, quando definido, tem precedência
+sobre `YTDLP_BROWSER` nesse fallback. Arquivos de cookies devem estar no
+formato Netscape aceito pelo yt-dlp e nunca são copiados para `outputs/`.
 
 `OPENAI_API_KEY` não é necessária para `transcribe` com o provider local. Ela
 continua obrigatória para `process` e `index`, pois a indexação usa
@@ -66,6 +84,19 @@ Pipeline completo:
 ```powershell
 python -m src.cli process "D:\Podcasts\episodio.mp3"
 ```
+
+O mesmo comando aceita uma URL HTTP/HTTPS e ignora parâmetros de playlist para
+baixar somente o vídeo solicitado:
+
+```powershell
+python -m src.cli process "https://www.youtube.com/watch?v=..."
+```
+
+O yt-dlp seleciona `bestaudio/best` e entrega o arquivo original baixado ao
+transcriber, sem conversão para MP3, pós-processador de áudio ou FFmpeg externo.
+Por padrão o diretório temporário é removido mesmo quando uma etapa posterior
+falha. Use `YTDLP_KEEP_TEMP=true` apenas para depuração; o caminho preservado é
+mostrado no terminal.
 
 Somente transcrição:
 
@@ -104,6 +135,24 @@ Com as dependências de desenvolvimento instaladas, também é possível usar:
 
 ```powershell
 python -m pytest
+```
+
+Os testes de URL usam fakes da API Python do yt-dlp e não acessam o YouTube.
+
+## Diagnóstico do yt-dlp
+
+Para verificar versões, EJS e a disponibilidade do Deno sem fazer download:
+
+```powershell
+python scripts/diagnose_ytdlp.py
+```
+
+Quando houver uma URL de teste, o mesmo script registra autenticação utilizada,
+formato, tamanho, tempo, caminho temporário, executa a transcrição e confirma a
+remoção ao final:
+
+```powershell
+python scripts/diagnose_ytdlp.py "https://www.youtube.com/watch?v=..."
 ```
 
 ## Diagnóstico do faster-whisper (CUDA)

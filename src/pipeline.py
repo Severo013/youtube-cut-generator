@@ -32,8 +32,17 @@ class PodcastPipeline:
         self._output_dir = output_dir
         self._progress = progress or (lambda _message: None)
 
-    def run(self, audio_path: Path) -> IndexResult:
-        """Run transcription and indexing for one audio file."""
+    def run(
+        self,
+        audio_path: Path,
+        *,
+        after_transcription: Callable[[], None] | None = None,
+    ) -> IndexResult:
+        """Run transcription and indexing for one audio file.
+
+        ``after_transcription`` releases short-lived input resources before the
+        provider-independent indexing stage starts.
+        """
 
         audio_path = Path(audio_path)
         self._progress("Validando arquivo")
@@ -44,7 +53,11 @@ class PodcastPipeline:
 
         episode_dir = self._output_dir / audio_path.stem
         self._progress("Transcrevendo")
-        transcript = self._transcriber.transcribe(audio_path)
+        try:
+            transcript = self._transcriber.transcribe(audio_path)
+        finally:
+            if after_transcription is not None:
+                after_transcription()
 
         self._progress("Salvando transcrição")
         self._save_transcript(episode_dir, transcript)

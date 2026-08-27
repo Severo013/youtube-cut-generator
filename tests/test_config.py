@@ -18,6 +18,10 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.local_whisper_compute_type, "float16")
         self.assertEqual(settings.transcription_language, "pt")
         self.assertEqual(settings.index_model, DEFAULT_INDEX_MODEL)
+        self.assertFalse(settings.ytdlp_keep_temp)
+        self.assertEqual(settings.ytdlp_auth_mode, "auto")
+        self.assertEqual(settings.ytdlp_browser, "firefox")
+        self.assertIsNone(settings.ytdlp_cookies_file)
 
     def test_loads_provider_selection_from_environment(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_dir:
@@ -27,6 +31,29 @@ class SettingsTests(unittest.TestCase):
                 settings = load_settings(dotenv_path)
 
         self.assertEqual(settings.transcription_provider, "openai")
+
+    def test_loads_ytdlp_settings_from_dotenv(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            dotenv_path = Path(temporary_dir) / ".env"
+            cookie_path = Path(temporary_dir) / "cookies.txt"
+            dotenv_path.write_text(
+                "\n".join(
+                    [
+                        "YTDLP_KEEP_TEMP=true",
+                        "YTDLP_AUTH_MODE=file",
+                        "YTDLP_BROWSER=chrome",
+                        f"YTDLP_COOKIES_FILE={cookie_path}",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            with patch.dict(os.environ, {}, clear=True):
+                settings = load_settings(dotenv_path)
+
+        self.assertTrue(settings.ytdlp_keep_temp)
+        self.assertEqual(settings.ytdlp_auth_mode, "file")
+        self.assertEqual(settings.ytdlp_browser, "chrome")
+        self.assertEqual(settings.ytdlp_cookies_file, cookie_path)
 
 
 if __name__ == "__main__":

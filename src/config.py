@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field, SecretStr
 
@@ -31,6 +32,10 @@ class Settings(BaseModel):
     )
     index_model: str = Field(default=DEFAULT_INDEX_MODEL, min_length=1)
     transcription_language: str = Field(default="pt", min_length=1)
+    ytdlp_keep_temp: bool = False
+    ytdlp_auth_mode: Literal["none", "browser", "file", "auto"] = "auto"
+    ytdlp_browser: str = Field(default="firefox", min_length=1)
+    ytdlp_cookies_file: Path | None = None
 
 
 def _read_dotenv(path: Path) -> dict[str, str]:
@@ -78,4 +83,10 @@ def load_settings(dotenv_path: str | Path = ".env") -> Settings:
         ),
         index_model=get("INDEX_MODEL", DEFAULT_INDEX_MODEL),
         transcription_language=get("TRANSCRIPTION_LANGUAGE", "pt"),
+        ytdlp_keep_temp=get("YTDLP_KEEP_TEMP", "false"),
+        ytdlp_auth_mode=(get("YTDLP_AUTH_MODE", "auto") or "auto").strip().lower(),
+        ytdlp_browser=(
+            get("YTDLP_BROWSER", "firefox") or "firefox"
+        ).strip().lower(),
+        ytdlp_cookies_file=get("YTDLP_COOKIES_FILE") or None,
     )
