@@ -231,3 +231,10 @@ outputs/
 *.opus
 *.wma
 *.webm
+
+# Authentication material for yt-dlp
+cookies.txt
+*.cookies.txt
+cookies-*.txt
+cookies/
+.secrets/
