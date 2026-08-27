@@ -3,7 +3,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from src.cli import build_parser, run_indexing, run_transcription
+from src.cli import (
+    _safe_directory_name,
+    build_parser,
+    run_indexing,
+    run_transcription,
+)
 from src.config import Settings
 from src.input_resolution import (
     DownloadMetadata,
@@ -59,7 +64,7 @@ class CliTests(unittest.TestCase):
                 audio_path.write_bytes(b"audio")
                 metadata = DownloadMetadata(
                     video_id="video",
-                    title="Episode",
+                    title="Episode: A Test?",
                     webpage_url=url,
                     duration_seconds=1,
                     uploader="Channel",
@@ -89,7 +94,14 @@ class CliTests(unittest.TestCase):
 
             factory.return_value.transcribe.assert_called_once_with(audio_path)
             self.assertFalse(download_root.exists())
-            self.assertEqual(output_dir, Path("outputs/video"))
+            self.assertEqual(output_dir, Path("outputs/Episode_ A Test_"))
+
+    def test_sanitizes_url_title_for_a_cross_platform_directory(self) -> None:
+        self.assertEqual(
+            _safe_directory_name('  CON: an <episode>.  ', "video"),
+            "CON_ an _episode_",
+        )
+        self.assertEqual(_safe_directory_name('  ...  ', "video"), "video")
 
     @patch("src.cli.PodcastPipeline")
     @patch("src.cli.OpenAIIndexer")

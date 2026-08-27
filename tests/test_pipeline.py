@@ -148,6 +148,27 @@ class PipelineTests(unittest.TestCase):
             self.assertTrue((root / "index.md").is_file())
             self.assertFalse((root / "unused").exists())
 
+    def test_run_can_use_an_explicit_output_directory_name(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            root = Path(temporary_dir)
+            audio_path = root / "temporary-video-id.webm"
+            audio_path.write_bytes(b"fake audio")
+            prompt_path = root / "prompt.md"
+            prompt_path.write_text("{{TRANSCRIPT}}", encoding="utf-8")
+
+            pipeline = PodcastPipeline(
+                transcriber=FakeTranscriber(),
+                indexer=FakeIndexer(),
+                prompt_path=prompt_path,
+                output_dir=root / "outputs",
+            )
+            pipeline.run(audio_path, output_name="Video title")
+
+            self.assertTrue(
+                (root / "outputs" / "Video title" / "index.json").is_file()
+            )
+            self.assertFalse((root / "outputs" / "temporary-video-id").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

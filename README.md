@@ -110,8 +110,12 @@ Reindexação sem nova chamada de transcrição:
 python -m src.cli index "outputs\episodio\transcript.json"
 ```
 
-Os comandos que recebem áudio aceitam `--output-dir`. O processamento completo
-cria `outputs/<episódio>/` contendo:
+Os comandos que recebem áudio aceitam `--output-dir`. Quando a entrada é uma
+URL, `<episódio>` é o título do vídeo (com caracteres inválidos para nomes de
+pasta substituídos). Para arquivos locais, continua sendo o nome do arquivo sem
+a extensão.
+
+O processamento completo cria `outputs/<episódio>/` contendo:
 
 - `transcript.raw.json`: metadados e segmentos serializáveis do provider de
   transcrição, identificados por `provider` e `model`;

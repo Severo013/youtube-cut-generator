@@ -36,6 +36,7 @@ class PodcastPipeline:
         self,
         audio_path: Path,
         *,
+        output_name: str | None = None,
         after_transcription: Callable[[], None] | None = None,
     ) -> IndexResult:
         """Run transcription and indexing for one audio file.
@@ -51,7 +52,7 @@ class PodcastPipeline:
         if self._transcriber is None:
             raise RuntimeError("O pipeline completo requer um Transcriber.")
 
-        episode_dir = self._output_dir / audio_path.stem
+        episode_dir = self._output_dir / (output_name or audio_path.stem)
         self._progress("Transcrevendo")
         try:
             transcript = self._transcriber.transcribe(audio_path)

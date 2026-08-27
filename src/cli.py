@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import re
 from collections.abc import Callable
 from pathlib import Path
 
 from src.config import Settings, load_settings
 from src.indexing import IndexingError
 from src.indexing.openai_indexer import OpenAIIndexer
-from src.input_resolution import InputResolutionError, InputResolver
+from src.input_resolution import InputResolutionError, InputResolver, ResolvedInput
 from src.pipeline import PodcastPipeline
 from src.transcription import TranscriptionError
 from src.transcription.factory import create_transcriber
@@ -17,6 +18,35 @@ from src.transcription.factory import create_transcriber
 
 DEFAULT_OUTPUT_DIR = Path("outputs")
 DEFAULT_PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "decupagem.md"
+_INVALID_FILENAME_CHARACTERS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_WINDOWS_RESERVED_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{number}" for number in range(1, 10)),
+    *(f"LPT{number}" for number in range(1, 10)),
+}
+
+
+def _safe_directory_name(value: str, fallback: str) -> str:
+    """Return a readable, cross-platform directory name."""
+
+    name = _INVALID_FILENAME_CHARACTERS.sub("_", value).strip().rstrip(". ")
+    name = name[:200].rstrip(". ")
+    if not name:
+        return fallback
+    if name.split(".", maxsplit=1)[0].upper() in _WINDOWS_RESERVED_NAMES:
+        name = f"_{name}"
+    return name
+
+
+def _episode_output_name(resolved: ResolvedInput) -> str:
+    if resolved.kind == "url" and resolved.metadata is not None:
+        title = resolved.metadata.title
+        if title:
+            return _safe_directory_name(title, resolved.path.stem)
+    return resolved.path.stem
 
 
 def _add_output_argument(parser: argparse.ArgumentParser) -> None:
@@ -91,7 +121,7 @@ def run_transcription(
 
     resolver = resolver or InputResolver(settings=settings, progress=print)
     with resolver.resolve(audio_source) as resolved:
-        episode_output_dir = output_root / resolved.path.stem
+        episode_output_dir = output_root / _episode_output_name(resolved)
         transcriber = create_transcriber(
             settings=settings,
             output_dir=episode_output_dir,
@@ -119,7 +149,8 @@ def run_process(
 
     resolver = resolver or InputResolver(settings=settings, progress=print)
     with resolver.resolve(audio_source) as resolved:
-        episode_output_dir = output_root / resolved.path.stem
+        episode_name = _episode_output_name(resolved)
+        episode_output_dir = output_root / episode_name
         transcriber = create_transcriber(
             settings=settings,
             output_dir=episode_output_dir,
@@ -136,7 +167,11 @@ def run_process(
             output_dir=output_root,
             progress=_transcription_progress(settings),
         )
-        pipeline.run(resolved.path, after_transcription=resolved.cleanup)
+        pipeline.run(
+            resolved.path,
+            output_name=episode_name,
+            after_transcription=resolved.cleanup,
+        )
     return episode_output_dir
 
 
