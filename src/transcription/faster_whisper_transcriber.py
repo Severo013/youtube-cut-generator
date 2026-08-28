@@ -74,6 +74,7 @@ class FasterWhisperTranscriber:
             segment_generator, info = model.transcribe(
                 str(audio_path),
                 language=self._language,
+                vad_filter=True,
                 word_timestamps=False,
             )
             raw_segments = list(segment_generator)
