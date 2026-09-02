@@ -9,20 +9,24 @@ uma decupagem cronológica do episódio.
   `IndexResult`).
 - `src/transcription/`: contrato `Transcriber`, adapters do faster-whisper e da
   OpenAI, e factory central de seleção do provider.
-- `src/indexing/`: contrato `Indexer` e adaptador da OpenAI usando Responses API
-  com Structured Outputs.
+- `src/processing/`: definições e registry de tasks, runner sequencial e
+  processor genérico da OpenAI usando Responses API com Structured Outputs.
+- `src/tasks/indexacao/`: `task.yaml` e prompt externo da task de indexação.
+- `src/indexing/`: contratos e adapter temporário que preservam a API antiga do
+  `Indexer` sobre a camada genérica.
 - `src/prompting.py`: carregamento e substituição previsível de
   `{{TRANSCRIPT}}`.
-- `src/prompts/decupagem.md`: prompt editável de decupagem.
-- `src/pipeline.py`: orquestração neutra em relação aos providers e persistência
-  local.
+- `src/pipeline.py`: orquestração da transcrição, execução da task `indexacao`
+  por padrão e persistência local compatível.
 - `src/input_resolution.py`: resolve caminhos locais e baixa URLs para um
   diretório temporário exclusivo usando a API Python do `yt-dlp`.
 - `src/cli.py`: comandos de transcrição, processamento completo e reindexação.
 
-Os providers dependem apenas dos contratos `Transcriber` e `Indexer`. Assim, eles
-podem ser substituídos sem levar tipos do SDK da OpenAI para o restante da
-aplicação.
+Cada `TaskDefinition` declara id, nome, prompt, executor e schema de saída. O
+`ProcessingRunner` usa o executor cadastrado sem conhecer OpenAI ou a semântica
+da indexação. Nesta fase a CLI executa somente `indexacao`, de forma sequencial e
+sem novos argumentos. O contrato antigo `Indexer` permanece disponível como
+adapter de compatibilidade.
 
 ## Preparação
 

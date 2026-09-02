@@ -9,15 +9,18 @@ from pathlib import Path
 
 from src.config import Settings, load_settings
 from src.indexing import IndexingError
-from src.indexing.openai_indexer import OpenAIIndexer
 from src.input_resolution import InputResolutionError, InputResolver, ResolvedInput
 from src.pipeline import PodcastPipeline
+from src.processing import ProcessingError, ProcessingRunner, TaskRegistry
+from src.processing.openai_processor import OpenAITranscriptProcessor
 from src.transcription import TranscriptionError
 from src.transcription.factory import create_transcriber
 
 
 DEFAULT_OUTPUT_DIR = Path("outputs")
-DEFAULT_PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "decupagem.md"
+DEFAULT_PROMPT_PATH = (
+    Path(__file__).resolve().parent / "tasks" / "indexacao" / "prompt.md"
+)
 _INVALID_FILENAME_CHARACTERS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _WINDOWS_RESERVED_NAMES = {
     "CON",
@@ -110,6 +113,18 @@ def _transcription_progress(settings: Settings) -> Callable[[str], None]:
     return report
 
 
+def _build_processing(
+    settings: Settings,
+) -> tuple[TaskRegistry, ProcessingRunner]:
+    task_registry = TaskRegistry.load_builtin()
+    openai_processor = OpenAITranscriptProcessor(
+        api_key=settings.openai_api_key,
+        default_model=settings.index_model,
+    )
+    runner = ProcessingRunner({"openai": openai_processor})
+    return task_registry, runner
+
+
 def run_transcription(
     audio_source: str | Path,
     output_root: Path,
@@ -156,14 +171,11 @@ def run_process(
             output_dir=episode_output_dir,
             progress=print,
         )
-        indexer = OpenAIIndexer(
-            api_key=settings.openai_api_key,
-            model=settings.index_model,
-        )
-        pipeline = PodcastPipeline(
+        task_registry, runner = _build_processing(settings)
+        pipeline = PodcastPipeline.for_processing(
             transcriber=transcriber,
-            indexer=indexer,
-            prompt_path=DEFAULT_PROMPT_PATH,
+            runner=runner,
+            task_registry=task_registry,
             output_dir=output_root,
             progress=_transcription_progress(settings),
         )
@@ -178,13 +190,10 @@ def run_process(
 def run_indexing(transcript_path: Path, settings: Settings) -> Path:
     """Index an existing transcript and return its output directory."""
 
-    indexer = OpenAIIndexer(
-        api_key=settings.openai_api_key,
-        model=settings.index_model,
-    )
-    pipeline = PodcastPipeline(
-        indexer=indexer,
-        prompt_path=DEFAULT_PROMPT_PATH,
+    task_registry, runner = _build_processing(settings)
+    pipeline = PodcastPipeline.for_processing(
+        runner=runner,
+        task_registry=task_registry,
         output_dir=transcript_path.parent,
         progress=print,
     )
@@ -207,6 +216,7 @@ def main() -> int:
         FileNotFoundError,
         IndexingError,
         InputResolutionError,
+        ProcessingError,
         TranscriptionError,
         OSError,
         ValueError,

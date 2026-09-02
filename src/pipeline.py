@@ -1,4 +1,4 @@
-"""Provider-independent orchestration for transcription and indexing."""
+"""Transcription orchestration with compatible transcript processing outputs."""
 
 from __future__ import annotations
 
@@ -8,11 +8,35 @@ from pathlib import Path
 
 from src.indexing.base import Indexer
 from src.models import IndexResult, Transcript
-from src.prompting import load_prompt, render_decupagem_prompt
+from src.processing import ProcessingRunner, TaskDefinition, TaskRegistry
+from src.prompting import load_prompt, render_prompt
 from src.transcription.base import Transcriber
 
 
 ProgressCallback = Callable[[str], None]
+DEFAULT_PROCESSING_TASK_ID = "indexacao"
+
+
+class _LegacyIndexerProcessor:
+    """Temporary adapter from the original Indexer contract to the new runner."""
+
+    def __init__(self, indexer: Indexer, prompt_path: Path | None) -> None:
+        self._indexer = indexer
+        self._prompt_path = prompt_path
+
+    def process(
+        self,
+        task: TaskDefinition,
+        transcript: Transcript,
+        formatted_transcript: str,
+    ) -> IndexResult:
+        template = (
+            load_prompt(self._prompt_path)
+            if self._prompt_path is not None
+            else task.load_prompt()
+        )
+        prompt = render_prompt(template, formatted_transcript)
+        return self._indexer.index(transcript, prompt)
 
 
 class PodcastPipeline:
@@ -20,17 +44,53 @@ class PodcastPipeline:
 
     def __init__(
         self,
-        indexer: Indexer,
-        prompt_path: Path,
+        indexer: Indexer | None,
+        prompt_path: Path | None,
         output_dir: Path,
         transcriber: Transcriber | None = None,
         progress: ProgressCallback | None = None,
+        *,
+        runner: ProcessingRunner | None = None,
+        task_registry: TaskRegistry | None = None,
     ) -> None:
         self._transcriber = transcriber
-        self._indexer = indexer
-        self._prompt_path = prompt_path
         self._output_dir = output_dir
         self._progress = progress or (lambda _message: None)
+        self._task_registry = task_registry or TaskRegistry.load_builtin()
+
+        if runner is not None and indexer is not None:
+            raise ValueError("Informe runner ou indexer legado, não ambos.")
+        if runner is not None:
+            self._runner = runner
+        elif indexer is not None:
+            task = self._task_registry.get(DEFAULT_PROCESSING_TASK_ID)
+            self._runner = ProcessingRunner(
+                {task.executor: _LegacyIndexerProcessor(indexer, prompt_path)}
+            )
+        else:
+            raise ValueError("O pipeline requer um ProcessingRunner ou Indexer.")
+
+    @classmethod
+    def for_processing(
+        cls,
+        *,
+        runner: ProcessingRunner,
+        task_registry: TaskRegistry,
+        output_dir: Path,
+        transcriber: Transcriber | None = None,
+        progress: ProgressCallback | None = None,
+    ) -> "PodcastPipeline":
+        """Build the pipeline through the generic processing architecture."""
+
+        return cls(
+            indexer=None,
+            prompt_path=None,
+            output_dir=output_dir,
+            transcriber=transcriber,
+            progress=progress,
+            runner=runner,
+            task_registry=task_registry,
+        )
 
     def run(
         self,
@@ -93,9 +153,11 @@ class PodcastPipeline:
         return result
 
     def _create_index(self, transcript: Transcript) -> IndexResult:
-        template = load_prompt(self._prompt_path)
-        prompt = render_decupagem_prompt(template, transcript)
-        return self._indexer.index(transcript, prompt)
+        task = self._task_registry.get(DEFAULT_PROCESSING_TASK_ID)
+        processing_results = self._runner.run(transcript, [task])
+        if len(processing_results) != 1:
+            raise RuntimeError("A task de indexação não retornou exatamente um resultado.")
+        return IndexResult.model_validate(processing_results[0].output)
 
     @classmethod
     def _save_transcript(cls, episode_dir: Path, transcript: Transcript) -> None:

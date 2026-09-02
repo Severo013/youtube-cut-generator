@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from src.models import IndexBlock, IndexResult, Transcript, TranscriptSegment
 from src.pipeline import PodcastPipeline
+from src.processing import ProcessingResult, TaskRegistry
 
 
 def make_transcript(source: str = "episode.mp3") -> Transcript:
@@ -58,6 +59,24 @@ class FakeIndexer:
         self.received_transcript = transcript
         self.received_prompt = prompt
         return make_index()
+
+
+class RecordingRunner:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def run(self, transcript, tasks):
+        task_list = list(tasks)
+        self.calls.append((transcript, task_list))
+        task = task_list[0]
+        return [
+            ProcessingResult[IndexResult](
+                task_id=task.id,
+                task_name=task.name,
+                executor=task.executor,
+                output=make_index(),
+            )
+        ]
 
 
 class PipelineTests(unittest.TestCase):
@@ -168,6 +187,30 @@ class PipelineTests(unittest.TestCase):
                 (root / "outputs" / "Video title" / "index.json").is_file()
             )
             self.assertFalse((root / "outputs" / "temporary-video-id").exists())
+
+    def test_generic_pipeline_executes_indexacao_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            root = Path(temporary_dir)
+            transcript_path = root / "transcript.json"
+            transcript_path.write_text(
+                make_transcript().model_dump_json(indent=2),
+                encoding="utf-8",
+            )
+            runner = RecordingRunner()
+            registry = TaskRegistry.load_builtin()
+            pipeline = PodcastPipeline.for_processing(
+                runner=runner,
+                task_registry=registry,
+                output_dir=root,
+            )
+
+            result = pipeline.index_transcript_file(transcript_path)
+
+            self.assertIsInstance(result, IndexResult)
+            self.assertEqual(len(runner.calls), 1)
+            self.assertEqual([task.id for task in runner.calls[0][1]], ["indexacao"])
+            self.assertTrue((root / "index.json").is_file())
+            self.assertTrue((root / "index.md").is_file())
 
 
 if __name__ == "__main__":

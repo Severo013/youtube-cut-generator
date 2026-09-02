@@ -104,17 +104,24 @@ class CliTests(unittest.TestCase):
         self.assertEqual(_safe_directory_name('  ...  ', "video"), "video")
 
     @patch("src.cli.PodcastPipeline")
-    @patch("src.cli.OpenAIIndexer")
+    @patch("src.cli.ProcessingRunner")
+    @patch("src.cli.OpenAITranscriptProcessor")
+    @patch("src.cli.TaskRegistry")
     @patch("src.cli.create_transcriber")
-    def test_reindex_command_does_not_create_transcriber(
+    def test_reindex_command_uses_default_generic_processing_without_transcriber(
         self,
         create_transcriber,
-        indexer_constructor,
+        registry_constructor,
+        processor_constructor,
+        runner_constructor,
         pipeline_constructor,
     ) -> None:
         transcript_path = Path("outputs/episode/transcript.json")
         settings = Settings()
-        pipeline = pipeline_constructor.return_value
+        registry = registry_constructor.load_builtin.return_value
+        processor = processor_constructor.return_value
+        runner = runner_constructor.return_value
+        pipeline = pipeline_constructor.for_processing.return_value
 
         with patch.object(
             YtDlpDownloader, "__init__", return_value=None
@@ -123,9 +130,17 @@ class CliTests(unittest.TestCase):
 
         create_transcriber.assert_not_called()
         downloader_constructor.assert_not_called()
-        indexer_constructor.assert_called_once_with(
+        registry_constructor.load_builtin.assert_called_once_with()
+        processor_constructor.assert_called_once_with(
             api_key=settings.openai_api_key,
-            model=settings.index_model,
+            default_model=settings.index_model,
+        )
+        runner_constructor.assert_called_once_with({"openai": processor})
+        pipeline_constructor.for_processing.assert_called_once_with(
+            runner=runner,
+            task_registry=registry,
+            output_dir=transcript_path.parent,
+            progress=print,
         )
         pipeline.index_transcript_file.assert_called_once_with(transcript_path)
         self.assertEqual(output_dir, transcript_path.parent)
