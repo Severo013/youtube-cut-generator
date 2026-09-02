@@ -3,7 +3,12 @@ import unittest
 from pathlib import Path
 
 from src.models import IndexBlock, IndexResult, Transcript, TranscriptSegment
-from src.processing import ProcessingRunner, TaskRegistry, UnknownExecutorError
+from src.processing import (
+    ProcessingRunner,
+    TaskExecutionError,
+    TaskRegistry,
+    UnknownExecutorError,
+)
 
 
 def make_transcript() -> Transcript:
@@ -45,6 +50,9 @@ class RecordingProcessor:
         self.calls.append((task, transcript, formatted_transcript))
         return make_index_result()
 
+    def model_for(self, task):
+        return "fake-model"
+
 
 class ProcessingRunnerTests(unittest.TestCase):
     def test_routes_task_and_canonical_transcript_to_configured_processor(self) -> None:
@@ -57,8 +65,11 @@ class ProcessingRunnerTests(unittest.TestCase):
 
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].task_id, "indexacao")
-        self.assertEqual(results[0].task_name, "Indexação")
+        self.assertEqual(results[0].task_name, "Indexação do episódio")
         self.assertEqual(results[0].executor, "openai")
+        self.assertEqual(results[0].model, "fake-model")
+        self.assertEqual(results[0].status, "completed")
+        self.assertEqual(results[0].schema_id, "index_result")
         self.assertIsInstance(results[0].output, IndexResult)
         self.assertEqual(
             processor.calls,
@@ -99,6 +110,60 @@ class ProcessingRunnerTests(unittest.TestCase):
 
         self.assertEqual([result.task_id for result in results], ["primeira", "segunda"])
         self.assertEqual([call[0].id for call in processor.calls], ["primeira", "segunda"])
+        self.assertIs(processor.calls[0][1], processor.calls[1][1])
+        self.assertIs(processor.calls[0][2], processor.calls[1][2])
+
+    def test_fails_fast_preserving_completed_callbacks_and_original_cause(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            root = Path(temporary_dir)
+            for task_id in ("primeira", "segunda", "terceira"):
+                task_dir = root / task_id
+                task_dir.mkdir()
+                (task_dir / "task.yaml").write_text(
+                    "\n".join(
+                        [
+                            f"id: {task_id}",
+                            f"name: {task_id.title()}",
+                            "prompt: prompt.md",
+                            "executor: fake",
+                            "schema: index_result",
+                        ]
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                (task_dir / "prompt.md").write_text(
+                    "{{TRANSCRIPT}}",
+                    encoding="utf-8",
+                )
+            registry = TaskRegistry.from_directory(
+                root,
+                schemas={"index_result": IndexResult},
+            )
+
+            class FailingProcessor(RecordingProcessor):
+                def process(self, task, transcript, formatted_transcript):
+                    self.calls.append((task, transcript, formatted_transcript))
+                    if task.id == "segunda":
+                        raise RuntimeError("provider unavailable")
+                    return make_index_result()
+
+            processor = FailingProcessor()
+            completed: list[str] = []
+
+            with self.assertRaisesRegex(
+                TaskExecutionError,
+                "segunda.*provider unavailable",
+            ) as raised:
+                ProcessingRunner({"fake": processor}).run(
+                    make_transcript(),
+                    registry.all(),
+                    on_result=lambda task, _result: completed.append(task.id),
+                )
+
+        self.assertEqual(completed, ["primeira"])
+        self.assertEqual([call[0].id for call in processor.calls], ["primeira", "segunda"])
+        self.assertIsInstance(raised.exception.__cause__, RuntimeError)
 
     def test_rejects_task_with_unregistered_executor(self) -> None:
         task = TaskRegistry.load_builtin().get("indexacao")

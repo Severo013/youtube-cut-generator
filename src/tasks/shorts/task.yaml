@@ -1,0 +1,5 @@
+id: shorts
+name: Seleção de Shorts
+prompt: prompt.md
+executor: openai
+schema: shorts_result

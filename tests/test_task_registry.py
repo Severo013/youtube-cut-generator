@@ -10,6 +10,7 @@ from src.processing import (
     TaskNotFoundError,
     TaskRegistry,
 )
+from src.tasks.shorts.models import ShortsResult
 
 
 SCHEMAS = {"index_result": IndexResult}
@@ -46,7 +47,7 @@ class TaskRegistryTests(unittest.TestCase):
 
         task = registry.get("indexacao")
 
-        self.assertEqual(task.name, "Indexação")
+        self.assertEqual(task.name, "Indexação do episódio")
         self.assertEqual(task.executor, "openai")
         self.assertEqual(task.schema_id, "index_result")
         self.assertIs(task.result_type, IndexResult)
@@ -57,11 +58,29 @@ class TaskRegistryTests(unittest.TestCase):
         self.assertTrue(package_root.joinpath("task.yaml").is_file())
         self.assertTrue(package_root.joinpath("prompt.md").is_file())
 
+        shorts = registry.get("shorts")
+        self.assertEqual(shorts.name, "Seleção de Shorts")
+        self.assertEqual(shorts.schema_id, "shorts_result")
+        self.assertIs(shorts.result_type, ShortsResult)
+        shorts_root = resources.files("src.tasks.shorts")
+        self.assertTrue(shorts_root.joinpath("task.yaml").is_file())
+        self.assertTrue(shorts_root.joinpath("prompt.md").is_file())
+
     def test_rejects_unknown_task(self) -> None:
         registry = TaskRegistry.load_builtin()
 
-        with self.assertRaisesRegex(TaskNotFoundError, "não encontrada"):
-            registry.get("shorts")
+        with self.assertRaisesRegex(
+            TaskNotFoundError,
+            "Unknown task: xyz\nAvailable tasks: indexacao, shorts",
+        ):
+            registry.get("xyz")
+
+    def test_resolves_multiple_tasks_in_requested_order(self) -> None:
+        registry = TaskRegistry.load_builtin()
+
+        tasks = registry.resolve(("shorts", "indexacao"))
+
+        self.assertEqual([task.id for task in tasks], ["shorts", "indexacao"])
 
     def test_rejects_duplicate_ids(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_dir:

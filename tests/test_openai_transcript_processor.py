@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 from src.models import IndexResult, Transcript, TranscriptSegment
 from src.processing import EmptyProcessingResultError, TaskRegistry
 from src.processing.openai_processor import OpenAITranscriptProcessor
+from src.tasks.shorts.models import ShortsResult
 
 
 def make_transcript() -> Transcript:
@@ -107,6 +108,38 @@ class OpenAITranscriptProcessorTests(unittest.TestCase):
 
         with self.assertRaises(EmptyProcessingResultError):
             processor.execute_prompt(task, "prompt")
+
+    def test_uses_shorts_schema_for_shorts_task(self) -> None:
+        task = TaskRegistry.load_builtin().get("shorts")
+        client = Mock()
+        client.responses.parse.return_value = SimpleNamespace(
+            output_parsed={
+                "moments": [
+                    {
+                        "start_seconds": 5,
+                        "end_seconds": 18,
+                        "title": "Momento",
+                        "summary": None,
+                        "central_idea": None,
+                        "context": None,
+                    }
+                ]
+            }
+        )
+        processor = OpenAITranscriptProcessor(
+            api_key="test-key",
+            default_model="gpt-5-mini",
+            client=client,
+        )
+
+        result = processor.execute_prompt(task, "prompt shorts")
+
+        self.assertIsInstance(result, ShortsResult)
+        client.responses.parse.assert_called_once_with(
+            model="gpt-5-mini",
+            input="prompt shorts",
+            text_format=ShortsResult,
+        )
 
 
 if __name__ == "__main__":

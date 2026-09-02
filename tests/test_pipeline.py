@@ -6,7 +6,13 @@ from unittest.mock import patch
 
 from src.models import IndexBlock, IndexResult, Transcript, TranscriptSegment
 from src.pipeline import PodcastPipeline
-from src.processing import ProcessingResult, TaskRegistry
+from src.processing import (
+    ProcessingResult,
+    ProcessingRunner,
+    TaskExecutionError,
+    TaskRegistry,
+)
+from src.tasks.shorts.models import ShortMoment, ShortsResult
 
 
 def make_transcript(source: str = "episode.mp3") -> Transcript:
@@ -65,18 +71,45 @@ class RecordingRunner:
     def __init__(self) -> None:
         self.calls = []
 
-    def run(self, transcript, tasks):
+    def run(self, transcript, tasks, *, on_result=None):
         task_list = list(tasks)
         self.calls.append((transcript, task_list))
         task = task_list[0]
-        return [
-            ProcessingResult[IndexResult](
+        result = ProcessingResult[IndexResult](
                 task_id=task.id,
                 task_name=task.name,
                 executor=task.executor,
+                schema_id=task.schema_id,
                 output=make_index(),
             )
-        ]
+        if on_result is not None:
+            on_result(task, result)
+        return [result]
+
+
+class MultiSchemaProcessor:
+    def __init__(self, failing_task: str | None = None) -> None:
+        self.failing_task = failing_task
+        self.calls = []
+
+    def process(self, task, transcript, formatted_transcript):
+        self.calls.append((task, transcript, formatted_transcript))
+        if task.id == self.failing_task:
+            raise RuntimeError("processor failed")
+        if task.schema_id == "shorts_result":
+            return ShortsResult(
+                moments=[
+                    ShortMoment(
+                        start_seconds=5,
+                        end_seconds=18,
+                        title="Short de teste",
+                    )
+                ]
+            )
+        return make_index()
+
+    def model_for(self, task):
+        return "fake-model"
 
 
 class PipelineTests(unittest.TestCase):
@@ -211,6 +244,127 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual([task.id for task in runner.calls[0][1]], ["indexacao"])
             self.assertTrue((root / "index.json").is_file())
             self.assertTrue((root / "index.md").is_file())
+
+    def test_processes_indexacao_and_shorts_with_independent_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            root = Path(temporary_dir)
+            transcript_path = root / "transcript.json"
+            transcript = make_transcript()
+            transcript_path.write_text(
+                transcript.model_dump_json(indent=2),
+                encoding="utf-8",
+            )
+            registry = TaskRegistry.load_builtin()
+            processor = MultiSchemaProcessor()
+            pipeline = PodcastPipeline.for_processing(
+                runner=ProcessingRunner({"openai": processor}),
+                task_registry=registry,
+                output_dir=root,
+            )
+
+            results = pipeline.process_transcript_file(
+                transcript_path,
+                registry.resolve(("indexacao", "shorts")),
+            )
+
+            self.assertEqual([result.task_id for result in results], ["indexacao", "shorts"])
+            self.assertIsInstance(results[0].output, IndexResult)
+            self.assertIsInstance(results[1].output, ShortsResult)
+            self.assertTrue((root / "processing" / "indexacao" / "result.json").is_file())
+            self.assertTrue((root / "processing" / "shorts" / "result.json").is_file())
+            self.assertTrue((root / "index.json").is_file())
+            self.assertEqual(len(processor.calls), 2)
+            self.assertIs(processor.calls[0][1], processor.calls[1][1])
+            self.assertIs(processor.calls[0][2], processor.calls[1][2])
+
+    def test_completed_output_survives_later_task_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            root = Path(temporary_dir)
+            transcript_path = root / "transcript.json"
+            transcript_path.write_text(
+                make_transcript().model_dump_json(indent=2),
+                encoding="utf-8",
+            )
+            tasks_root = root / "tasks"
+            tasks_root.mkdir()
+            for task_id in ("primeira", "segunda", "terceira"):
+                task_dir = tasks_root / task_id
+                task_dir.mkdir()
+                (task_dir / "task.yaml").write_text(
+                    "\n".join(
+                        [
+                            f"id: {task_id}",
+                            f"name: {task_id.title()}",
+                            "prompt: prompt.md",
+                            "executor: fake",
+                            "schema: index_result",
+                        ]
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                (task_dir / "prompt.md").write_text("{{TRANSCRIPT}}", encoding="utf-8")
+            registry = TaskRegistry.from_directory(
+                tasks_root,
+                schemas={"index_result": IndexResult},
+            )
+            processor = MultiSchemaProcessor(failing_task="segunda")
+            pipeline = PodcastPipeline.for_processing(
+                runner=ProcessingRunner({"fake": processor}),
+                task_registry=registry,
+                output_dir=root,
+            )
+
+            with self.assertRaisesRegex(TaskExecutionError, "segunda.*processor failed"):
+                pipeline.process_transcript_file(transcript_path, registry.all())
+
+            self.assertTrue((root / "processing" / "primeira" / "result.json").is_file())
+            self.assertFalse((root / "processing" / "segunda").exists())
+            self.assertFalse((root / "processing" / "terceira").exists())
+            self.assertEqual([call[0].id for call in processor.calls], ["primeira", "segunda"])
+
+    def test_new_task_definition_requires_no_pipeline_change(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            root = Path(temporary_dir)
+            transcript_path = root / "transcript.json"
+            transcript_path.write_text(
+                make_transcript().model_dump_json(indent=2),
+                encoding="utf-8",
+            )
+            tasks_root = root / "tasks"
+            task_dir = tasks_root / "nova_task"
+            task_dir.mkdir(parents=True)
+            (task_dir / "task.yaml").write_text(
+                "\n".join(
+                    [
+                        "id: nova_task",
+                        "name: Nova task",
+                        "prompt: prompt.md",
+                        "executor: fake",
+                        "schema: index_result",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (task_dir / "prompt.md").write_text("{{TRANSCRIPT}}", encoding="utf-8")
+            registry = TaskRegistry.from_directory(
+                tasks_root,
+                schemas={"index_result": IndexResult},
+            )
+            pipeline = PodcastPipeline.for_processing(
+                runner=ProcessingRunner({"fake": MultiSchemaProcessor()}),
+                task_registry=registry,
+                output_dir=root,
+            )
+
+            results = pipeline.process_transcript_file(
+                transcript_path,
+                registry.all(),
+            )
+
+            self.assertEqual([result.task_id for result in results], ["nova_task"])
+            self.assertTrue((root / "processing" / "nova_task" / "result.json").is_file())
 
 
 if __name__ == "__main__":

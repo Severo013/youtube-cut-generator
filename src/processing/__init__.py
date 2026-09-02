@@ -6,10 +6,12 @@ from .base import (
     ProcessingConfigurationError,
     ProcessingError,
     ProcessingProviderError,
+    TaskExecutionError,
     TranscriptProcessor,
     UnknownExecutorError,
 )
 from .models import ProcessingResult, TaskDefinition
+from .output import ProcessingOutputWriter
 from .registry import (
     DuplicateTaskIdError,
     InvalidTaskDefinitionError,
@@ -29,7 +31,9 @@ __all__ = [
     "ProcessingProviderError",
     "ProcessingResult",
     "ProcessingRunner",
+    "ProcessingOutputWriter",
     "TaskDefinition",
+    "TaskExecutionError",
     "TaskNotFoundError",
     "TaskRegistry",
     "TaskRegistryError",

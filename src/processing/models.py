@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from importlib.resources.abc import Traversable
 from pathlib import PurePosixPath
-from typing import Generic, TypeVar
+from typing import Generic, Literal, TypeVar
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
     PrivateAttr,
+    SerializeAsAny,
     field_validator,
 )
 
@@ -90,4 +91,7 @@ class ProcessingResult(BaseModel, Generic[ResultT]):
     task_id: str
     task_name: str
     executor: str
-    output: ResultT
+    model: str | None = None
+    status: Literal["completed"] = "completed"
+    schema_id: str | None = None
+    output: SerializeAsAny[ResultT]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
@@ -14,10 +14,12 @@ from pydantic import BaseModel, ValidationError
 from src.models import IndexResult
 from src.processing.base import ProcessingConfigurationError
 from src.processing.models import TaskDefinition
+from src.tasks.shorts.models import ShortsResult
 
 
 DEFAULT_TASK_SCHEMAS: Mapping[str, type[BaseModel]] = {
     "index_result": IndexResult,
+    "shorts_result": ShortsResult,
 }
 
 
@@ -162,10 +164,15 @@ class TaskRegistry:
         try:
             return self._tasks[task_id]
         except KeyError as error:
-            available = ", ".join(sorted(self._tasks)) or "nenhuma"
+            available = ", ".join(sorted(self._tasks)) or "none"
             raise TaskNotFoundError(
-                f"Task não encontrada: {task_id}. Disponíveis: {available}."
+                f"Unknown task: {task_id}\nAvailable tasks: {available}"
             ) from error
+
+    def resolve(self, task_ids: Sequence[str]) -> list[TaskDefinition]:
+        """Resolve task ids in the requested order before execution begins."""
+
+        return [self.get(task_id) for task_id in task_ids]
 
     def all(self) -> tuple[TaskDefinition, ...]:
         return tuple(self._tasks.values())

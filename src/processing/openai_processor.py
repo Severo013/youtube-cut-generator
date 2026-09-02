@@ -74,6 +74,11 @@ class OpenAITranscriptProcessor:
                 f"A OpenAI retornou dados inválidos para a task {task.id!r}."
             ) from error
 
+    def model_for(self, task: TaskDefinition) -> str:
+        """Return the model that will execute this task."""
+
+        return task.model or self._default_model
+
     def _get_api_key(self) -> str:
         api_key = (
             self._api_key.get_secret_value()

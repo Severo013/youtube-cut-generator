@@ -1,5 +1,5 @@
 id: indexacao
-name: Indexação
+name: Indexação do episódio
 prompt: prompt.md
 executor: openai
 schema: index_result
