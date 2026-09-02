@@ -13,6 +13,7 @@ dependencies = [
     "faster-whisper>=1.2.1,<2",
     "openai>=1.99.9,<3",
     "pydantic>=2.7,<3",
+    "PyYAML>=6,<7",
     "yt-dlp[default]>=2026.8.19",
 ]
 
@@ -25,7 +26,7 @@ dev = [
 include = ["src*"]
 
 [tool.setuptools.package-data]
-src = ["prompts/*.md"]
+"*" = ["*.md", "*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -4,20 +4,29 @@ from __future__ import annotations
 
 import argparse
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from src.config import Settings, load_settings
 from src.indexing import IndexingError
-from src.indexing.openai_indexer import OpenAIIndexer
 from src.input_resolution import InputResolutionError, InputResolver, ResolvedInput
 from src.pipeline import PodcastPipeline
+from src.processing import (
+    ProcessingError,
+    ProcessingRunner,
+    TaskDefinition,
+    TaskRegistry,
+)
+from src.processing.openai_processor import OpenAITranscriptProcessor
 from src.transcription import TranscriptionError
 from src.transcription.factory import create_transcriber
 
 
 DEFAULT_OUTPUT_DIR = Path("outputs")
-DEFAULT_PROMPT_PATH = Path(__file__).resolve().parent / "prompts" / "decupagem.md"
+DEFAULT_TASK_IDS = ("indexacao",)
+DEFAULT_PROMPT_PATH = (
+    Path(__file__).resolve().parent / "tasks" / "indexacao" / "prompt.md"
+)
 _INVALID_FILENAME_CHARACTERS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _WINDOWS_RESERVED_NAMES = {
     "CON",
@@ -58,6 +67,15 @@ def _add_output_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_tasks_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--tasks",
+        nargs="+",
+        metavar="TASK_ID",
+        help="Uma ou mais tasks (padrão: indexacao)",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="podcast-indexer",
@@ -84,12 +102,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Caminho de arquivo local ou URL HTTP/HTTPS",
     )
     _add_output_argument(process_parser)
+    _add_tasks_argument(process_parser)
+
+    process_transcript_parser = commands.add_parser(
+        "process-transcript",
+        help="Executa tasks sobre um transcript.json existente",
+    )
+    process_transcript_parser.add_argument("transcript_path", type=Path)
+    _add_tasks_argument(process_transcript_parser)
 
     index_parser = commands.add_parser(
         "index",
         help="Reindexa um transcript.json sem transcrever novamente",
     )
     index_parser.add_argument("transcript_path", type=Path)
+    commands.add_parser("list-tasks", help="Lista as tasks disponíveis")
     return parser
 
 
@@ -108,6 +135,22 @@ def _transcription_progress(settings: Settings) -> Callable[[str], None]:
             print(message)
 
     return report
+
+
+def _load_selected_tasks(
+    task_ids: Sequence[str] | None,
+) -> tuple[TaskRegistry, list[TaskDefinition]]:
+    task_registry = TaskRegistry.load_builtin()
+    selected_tasks = task_registry.resolve(tuple(task_ids or DEFAULT_TASK_IDS))
+    return task_registry, selected_tasks
+
+
+def _build_runner(settings: Settings) -> ProcessingRunner:
+    openai_processor = OpenAITranscriptProcessor(
+        api_key=settings.openai_api_key,
+        default_model=settings.index_model,
+    )
+    return ProcessingRunner({"openai": openai_processor})
 
 
 def run_transcription(
@@ -143,10 +186,13 @@ def run_process(
     output_root: Path,
     settings: Settings,
     *,
+    task_ids: Sequence[str] | None = None,
     resolver: InputResolver | None = None,
 ) -> Path:
-    """Execute the complete audio-to-index pipeline."""
+    """Transcribe one input and execute the selected transcript tasks."""
 
+    task_registry, selected_tasks = _load_selected_tasks(task_ids)
+    runner = _build_runner(settings)
     resolver = resolver or InputResolver(settings=settings, progress=print)
     with resolver.resolve(audio_source) as resolved:
         episode_name = _episode_output_name(resolved)
@@ -156,19 +202,16 @@ def run_process(
             output_dir=episode_output_dir,
             progress=print,
         )
-        indexer = OpenAIIndexer(
-            api_key=settings.openai_api_key,
-            model=settings.index_model,
-        )
-        pipeline = PodcastPipeline(
+        pipeline = PodcastPipeline.for_processing(
             transcriber=transcriber,
-            indexer=indexer,
-            prompt_path=DEFAULT_PROMPT_PATH,
+            runner=runner,
+            task_registry=task_registry,
             output_dir=output_root,
             progress=_transcription_progress(settings),
         )
-        pipeline.run(
+        pipeline.run_tasks(
             resolved.path,
+            selected_tasks,
             output_name=episode_name,
             after_transcription=resolved.cleanup,
         )
@@ -178,35 +221,76 @@ def run_process(
 def run_indexing(transcript_path: Path, settings: Settings) -> Path:
     """Index an existing transcript and return its output directory."""
 
-    indexer = OpenAIIndexer(
-        api_key=settings.openai_api_key,
-        model=settings.index_model,
+    return run_process_transcript(
+        transcript_path,
+        settings,
+        task_ids=DEFAULT_TASK_IDS,
     )
-    pipeline = PodcastPipeline(
-        indexer=indexer,
-        prompt_path=DEFAULT_PROMPT_PATH,
+
+
+def run_process_transcript(
+    transcript_path: Path,
+    settings: Settings,
+    *,
+    task_ids: Sequence[str] | None = None,
+) -> Path:
+    """Execute selected tasks without resolving or transcribing media."""
+
+    task_registry, selected_tasks = _load_selected_tasks(task_ids)
+    runner = _build_runner(settings)
+    pipeline = PodcastPipeline.for_processing(
+        runner=runner,
+        task_registry=task_registry,
         output_dir=transcript_path.parent,
         progress=print,
     )
-    pipeline.index_transcript_file(transcript_path)
+    pipeline.process_transcript_file(transcript_path, selected_tasks)
     return transcript_path.parent
+
+
+def run_list_tasks(*, registry: TaskRegistry | None = None) -> None:
+    """Print tasks discovered by the registry without loading providers."""
+
+    registry = registry or TaskRegistry.load_builtin()
+    print("Available tasks:")
+    print()
+    for task in registry.all():
+        print(f"* {task.id} — {task.name}")
 
 
 def main() -> int:
     args = build_parser().parse_args()
-    settings = load_settings()
 
     try:
+        if args.command == "list-tasks":
+            run_list_tasks()
+            return 0
+
+        settings = load_settings()
         if args.command == "transcribe":
             output_dir = run_transcription(args.audio_source, args.output_dir, settings)
         elif args.command == "process":
-            output_dir = run_process(args.audio_source, args.output_dir, settings)
-        else:
+            output_dir = run_process(
+                args.audio_source,
+                args.output_dir,
+                settings,
+                task_ids=args.tasks,
+            )
+        elif args.command == "process-transcript":
+            output_dir = run_process_transcript(
+                args.transcript_path,
+                settings,
+                task_ids=args.tasks,
+            )
+        elif args.command == "index":
             output_dir = run_indexing(args.transcript_path, settings)
+        else:  # pragma: no cover - argparse restricts command values
+            raise ValueError(f"Comando desconhecido: {args.command}")
     except (
         FileNotFoundError,
         IndexingError,
         InputResolutionError,
+        ProcessingError,
         TranscriptionError,
         OSError,
         ValueError,

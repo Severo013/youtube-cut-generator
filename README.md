@@ -9,20 +9,23 @@ uma decupagem cronológica do episódio.
   `IndexResult`).
 - `src/transcription/`: contrato `Transcriber`, adapters do faster-whisper e da
   OpenAI, e factory central de seleção do provider.
-- `src/indexing/`: contrato `Indexer` e adaptador da OpenAI usando Responses API
-  com Structured Outputs.
+- `src/processing/`: definições e registry de tasks, runner sequencial e
+  processor genérico da OpenAI usando Responses API com Structured Outputs.
+- `src/tasks/`: definições externas e prompts das tasks `indexacao` e `shorts`.
+- `src/indexing/`: contratos e adapter temporário que preservam a API antiga do
+  `Indexer` sobre a camada genérica.
 - `src/prompting.py`: carregamento e substituição previsível de
   `{{TRANSCRIPT}}`.
-- `src/prompts/decupagem.md`: prompt editável de decupagem.
-- `src/pipeline.py`: orquestração neutra em relação aos providers e persistência
-  local.
+- `src/pipeline.py`: orquestração da transcrição e execução sequencial das tasks
+  selecionadas.
 - `src/input_resolution.py`: resolve caminhos locais e baixa URLs para um
   diretório temporário exclusivo usando a API Python do `yt-dlp`.
 - `src/cli.py`: comandos de transcrição, processamento completo e reindexação.
 
-Os providers dependem apenas dos contratos `Transcriber` e `Indexer`. Assim, eles
-podem ser substituídos sem levar tipos do SDK da OpenAI para o restante da
-aplicação.
+Cada `TaskDefinition` declara id, nome, prompt, executor e schema de saída. O
+`ProcessingRunner` usa o executor cadastrado sem conhecer OpenAI ou a semântica
+das tasks. A execução é sequencial e fail-fast. O contrato antigo `Indexer`
+permanece disponível como adapter de compatibilidade.
 
 ## Preparação
 
@@ -67,8 +70,9 @@ sobre `YTDLP_BROWSER` nesse fallback. Arquivos de cookies devem estar no
 formato Netscape aceito pelo yt-dlp e nunca são copiados para `outputs/`.
 
 `OPENAI_API_KEY` não é necessária para `transcribe` com o provider local. Ela
-continua obrigatória para `process` e `index`, pois a indexação usa
-`gpt-5-mini`. O `.env` é ignorado pelo Git.
+continua obrigatória para tasks executadas pela OpenAI em `process`,
+`process-transcript` e `index`. O modelo padrão continua sendo `INDEX_MODEL`. O
+`.env` é ignorado pelo Git.
 
 Para voltar à transcrição pela OpenAI sem alterar código:
 
@@ -79,18 +83,34 @@ TRANSCRIPTION_MODEL=whisper-1
 
 ## Uso
 
-Pipeline completo:
+Processar somente indexação:
 
 ```powershell
-python -m src.cli process "D:\Podcasts\episodio.mp3"
+python -m src.cli process "<url>" --tasks indexacao
 ```
 
-O mesmo comando aceita uma URL HTTP/HTTPS e ignora parâmetros de playlist para
-baixar somente o vídeo solicitado:
+Indexação e seleção de Shorts sobre a mesma transcrição:
 
 ```powershell
-python -m src.cli process "https://www.youtube.com/watch?v=..."
+python -m src.cli process "<url>" --tasks indexacao shorts
 ```
+
+Somente Shorts:
+
+```powershell
+python -m src.cli process "<url>" --tasks shorts
+```
+
+Arquivo local:
+
+```powershell
+python -m src.cli process "D:\arquivo.mp3" --tasks indexacao shorts
+```
+
+Sem `--tasks`, `process` continua executando somente `indexacao`.
+
+O comando aceita URLs HTTP/HTTPS e ignora parâmetros de playlist para baixar
+somente o vídeo solicitado.
 
 O yt-dlp seleciona `bestaudio/best` e entrega o arquivo original baixado ao
 transcriber, sem conversão para MP3, pós-processador de áudio ou FFmpeg externo.
@@ -104,10 +124,28 @@ Somente transcrição:
 python -m src.cli transcribe "D:\Podcasts\episodio.mp3"
 ```
 
-Reindexação sem nova chamada de transcrição:
+Executar novas tasks sobre uma transcrição existente, sem downloader ou Whisper:
+
+```powershell
+python -m src.cli process-transcript "outputs\episodio\transcript.json" --tasks shorts
+```
+
+Também é possível executar várias tasks:
+
+```powershell
+python -m src.cli process-transcript "outputs\episodio\transcript.json" --tasks indexacao shorts
+```
+
+O comando legado de reindexação continua disponível:
 
 ```powershell
 python -m src.cli index "outputs\episodio\transcript.json"
+```
+
+Listar as tasks descobertas pelo registry:
+
+```powershell
+python -m src.cli list-tasks
 ```
 
 Os comandos que recebem áudio aceitam `--output-dir`. Quando a entrada é uma
@@ -122,10 +160,30 @@ O processamento completo cria `outputs/<episódio>/` contendo:
 - `transcript.json`: transcrição interna normalizada;
 - `transcript.txt`: falas com timestamps;
 - `index.json`: `IndexResult` normalizado;
-- `index.md`: visualização legível dos assuntos.
+- `index.md`: visualização legível dos assuntos, preservada por compatibilidade;
+- `processing/indexacao/result.json` e `result.md`;
+- `processing/shorts/result.json` e `result.md`, quando `shorts` for selecionada.
 
 O comando `index` grava `index.json` e `index.md` ao lado do `transcript.json`, o
 que permite editar o prompt e reindexar sem pagar novamente pela transcrição.
+
+Cada `result.json` contém somente o resultado específico da task. Metadata comum
+como task, executor, modelo e status permanece no `ProcessingResult` em memória,
+sem duplicar o payload nos arquivos.
+
+## Criar uma nova task
+
+Para uma task que reutilize um schema já registrado:
+
+1. crie `src/tasks/<id>/__init__.py`;
+2. crie `src/tasks/<id>/task.yaml` com `id`, `name`, `prompt`, `executor` e
+   `schema`;
+3. crie `src/tasks/<id>/prompt.md` contendo `{{TRANSCRIPT}}`.
+
+Não é necessário alterar a CLI nem o pipeline. Quando a task precisar de um novo
+Structured Output, crie seu modelo Pydantic e registre explicitamente o novo id
+de schema em `DEFAULT_TASK_SCHEMAS`. Um renderer Markdown específico é opcional;
+sem ele, o writer usa uma representação JSON genérica.
 
 ## Testes
 
