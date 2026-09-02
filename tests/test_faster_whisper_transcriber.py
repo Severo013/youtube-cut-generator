@@ -95,7 +95,7 @@ class FasterWhisperTranscriberTests(unittest.TestCase):
         self.assertEqual(transcript.segments[1].end_seconds, 8.5)
         self.assertEqual(
             fake_model.calls[0][1],
-            {"language": "pt", "word_timestamps": False},
+            {"language": "pt", "vad_filter": True, "word_timestamps": False},
         )
 
         raw_payload = json.loads(
