@@ -22,7 +22,7 @@ from src.input_resolution import (
     InputResolver,
     YtDlpDownloader,
 )
-from src.processing import TaskNotFoundError
+from src.processing import InvalidExecutionPlanError, TaskNotFoundError
 
 
 class CliTests(unittest.TestCase):
@@ -214,6 +214,36 @@ class CliTests(unittest.TestCase):
         downloader_constructor.assert_not_called()
         whisper_constructor.assert_not_called()
 
+    @patch("src.cli.create_transcriber")
+    @patch("src.cli.InputResolver")
+    @patch("src.cli.OpenAITranscriptProcessor")
+    @patch("src.cli.TaskRegistry")
+    def test_invalid_execution_plan_is_rejected_before_expensive_components(
+        self,
+        registry_constructor,
+        processor_constructor,
+        resolver_constructor,
+        create_transcriber,
+    ) -> None:
+        registry_constructor.load_builtin.return_value.resolve.side_effect = (
+            InvalidExecutionPlanError(
+                "Task 'b' requires task 'a', which must be selected and "
+                "executed earlier in the same processing run."
+            )
+        )
+
+        with self.assertRaises(InvalidExecutionPlanError):
+            run_process(
+                "https://example.com/video",
+                Path("outputs"),
+                Settings(),
+                task_ids=["b", "a"],
+            )
+
+        processor_constructor.assert_not_called()
+        resolver_constructor.assert_not_called()
+        create_transcriber.assert_not_called()
+
     @patch("src.cli.PodcastPipeline")
     @patch("src.cli.create_transcriber")
     @patch("src.cli.InputResolver")
@@ -307,7 +337,7 @@ class CliTests(unittest.TestCase):
             api_key=settings.openai_api_key,
             default_model=settings.index_model,
         )
-        runner_constructor.assert_called_once_with({"openai": processor})
+        runner_constructor.assert_called_once_with(executors={"openai": processor})
         pipeline_constructor.for_processing.assert_called_once_with(
             runner=runner,
             task_registry=registry,

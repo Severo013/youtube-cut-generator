@@ -3,7 +3,13 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from src.models import IndexResult, Transcript, TranscriptSegment
-from src.processing import EmptyProcessingResultError, TaskRegistry
+from src.processing import (
+    EmptyProcessingResultError,
+    ProcessingConfigurationError,
+    ProcessingRunner,
+    TaskDefinition,
+    TaskRegistry,
+)
 from src.processing.openai_processor import OpenAITranscriptProcessor
 from src.tasks.shorts.models import ShortsResult
 
@@ -140,6 +146,59 @@ class OpenAITranscriptProcessorTests(unittest.TestCase):
             input="prompt shorts",
             text_format=ShortsResult,
         )
+
+    def test_runner_passes_an_already_rendered_prompt_to_openai_executor(self) -> None:
+        task = TaskRegistry.load_builtin().get("indexacao")
+        client = Mock()
+        client.responses.parse.return_value = SimpleNamespace(
+            output_parsed=parsed_index()
+        )
+        processor = OpenAITranscriptProcessor(
+            api_key="test-key",
+            default_model="gpt-5-mini",
+            client=client,
+        )
+        transcript = make_transcript()
+
+        with patch.object(
+            type(task),
+            "load_prompt",
+            autospec=True,
+            return_value="PREPARADO\n{{TRANSCRIPT}}",
+        ):
+            ProcessingRunner(executors={"openai": processor}).run(
+                transcript,
+                [task],
+            )
+
+        self.assertEqual(
+            client.responses.parse.call_args.kwargs["input"],
+            "PREPARADO\n[00:00:05 - 00:00:18] Primeira fala.",
+        )
+
+    def test_legacy_process_explicitly_rejects_dependent_task(self) -> None:
+        task = TaskDefinition.model_validate(
+            {
+                "id": "dependent",
+                "name": "Dependent",
+                "prompt": "prompt.md",
+                "executor": "openai",
+                "schema": "index_result",
+                "requires": ["indexacao"],
+            }
+        )
+        processor = OpenAITranscriptProcessor(
+            api_key="test-key",
+            default_model="gpt-5-mini",
+            client=Mock(),
+        )
+        transcript = make_transcript()
+
+        with self.assertRaisesRegex(
+            ProcessingConfigurationError,
+            "ProcessingRunner.*context",
+        ):
+            processor.process(task, transcript, transcript.as_timestamped_text())
 
 
 if __name__ == "__main__":

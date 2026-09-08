@@ -35,6 +35,11 @@ class OpenAITranscriptProcessor:
         transcript: Transcript,
         formatted_transcript: str,
     ) -> BaseModel:
+        if task.requires:
+            raise ProcessingConfigurationError(
+                f"Task {task.id!r} declares dependencies and must be executed by "
+                "ProcessingRunner with its processing context."
+            )
         del transcript
         template = task.load_prompt()
         prompt = render_prompt(template, formatted_transcript)

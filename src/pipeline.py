@@ -15,6 +15,7 @@ from src.processing import (
     TaskRegistry,
 )
 from src.processing.output import ProcessingOutputWriter
+from src.processing.validation import validate_execution_plan
 from src.prompting import load_prompt, render_prompt
 from src.transcription.base import Transcriber
 
@@ -168,6 +169,7 @@ class PodcastPipeline:
         """Execute selected tasks over an existing normalized transcript."""
 
         self._require_generic_processing()
+        validate_execution_plan(tasks)
         transcript_path, transcript = self._load_transcript(transcript_path)
         self._progress("Processando tasks")
         results = self._process_tasks(transcript_path.parent, transcript, tasks)
@@ -192,6 +194,7 @@ class PodcastPipeline:
     ) -> list[ProcessingResult]:
         if not tasks:
             raise ValueError("Selecione ao menos uma task.")
+        validate_execution_plan(tasks)
 
         audio_path = Path(audio_path)
         self._progress("Validando arquivo")
@@ -225,6 +228,7 @@ class PodcastPipeline:
     ) -> list[ProcessingResult]:
         if not tasks:
             raise ValueError("Selecione ao menos uma task.")
+        validate_execution_plan(tasks)
 
         def save_result(
             task: TaskDefinition,

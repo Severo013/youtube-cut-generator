@@ -6,9 +6,11 @@ from pathlib import Path
 from src.models import IndexResult
 from src.processing import (
     DuplicateTaskIdError,
+    InvalidExecutionPlanError,
     InvalidTaskDefinitionError,
     TaskNotFoundError,
     TaskRegistry,
+    TaskDefinition,
 )
 from src.tasks.shorts.models import ShortsResult
 
@@ -52,6 +54,8 @@ class TaskRegistryTests(unittest.TestCase):
         self.assertEqual(task.schema_id, "index_result")
         self.assertIs(task.result_type, IndexResult)
         self.assertEqual(task.prompt, "prompt.md")
+        self.assertEqual(task.requires, [])
+        self.assertEqual(task.settings, {})
         self.assertIn("{{TRANSCRIPT}}", task.load_prompt())
 
         package_root = resources.files("src.tasks.indexacao")
@@ -132,6 +136,123 @@ class TaskRegistryTests(unittest.TestCase):
             (root / "invalid").mkdir()
 
             with self.assertRaisesRegex(InvalidTaskDefinitionError, "task.yaml"):
+                TaskRegistry.from_directory(root, schemas=SCHEMAS)
+
+    def test_accepts_dependencies_and_primitive_settings(self) -> None:
+        definition = TaskDefinition.model_validate(
+            {
+                "id": "dependent",
+                "name": "Dependent",
+                "prompt": "prompt.md",
+                "executor": "fake",
+                "schema": "index_result",
+                "requires": ["source-task"],
+                "settings": {
+                    "text": "value",
+                    "enabled": True,
+                    "count": 5,
+                    "ratio": 1.5,
+                },
+            }
+        )
+
+        self.assertEqual(definition.requires, ["source-task"])
+        self.assertEqual(
+            definition.settings,
+            {"text": "value", "enabled": True, "count": 5, "ratio": 1.5},
+        )
+
+    def test_rejects_duplicate_self_and_invalid_dependencies(self) -> None:
+        base = {
+            "id": "dependent",
+            "name": "Dependent",
+            "prompt": "prompt.md",
+            "executor": "fake",
+            "schema": "index_result",
+        }
+        for requires, message in (
+            (["source", "source"], "duplicate"),
+            (["dependent"], "itself"),
+            (["Invalid Id"], "invalid dependency"),
+        ):
+            with self.subTest(requires=requires), self.assertRaisesRegex(
+                ValueError,
+                message,
+            ):
+                TaskDefinition.model_validate({**base, "requires": requires})
+
+    def test_rejects_nested_null_and_non_finite_settings(self) -> None:
+        base = {
+            "id": "test",
+            "name": "Test",
+            "prompt": "prompt.md",
+            "executor": "fake",
+            "schema": "index_result",
+        }
+        for value in ({"nested": True}, [1], None, float("inf")):
+            with self.subTest(value=value), self.assertRaisesRegex(
+                ValueError,
+                "must be a string",
+            ):
+                TaskDefinition.model_validate(
+                    {**base, "settings": {"invalid": value}}
+                )
+
+    def test_rejects_prompt_variable_name_collisions(self) -> None:
+        base = {
+            "id": "dependent",
+            "name": "Dependent",
+            "prompt": "prompt.md",
+            "executor": "fake",
+            "schema": "index_result",
+        }
+        for fields in (
+            {"settings": {"transcript": "value"}},
+            {"settings": {"size": 1, "SIZE": 2}},
+            {"requires": ["source"], "settings": {"SOURCE": "value"}},
+        ):
+            with self.subTest(fields=fields), self.assertRaisesRegex(
+                ValueError,
+                "collides",
+            ):
+                TaskDefinition.model_validate({**base, **fields})
+
+    def test_registry_accepts_known_dependency_and_rejects_unknown_one(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            root = Path(temporary_dir)
+            write_task(root, "source", task_id="source")
+            write_task(root, "dependent", task_id="dependent")
+            config_path = root / "dependent" / "task.yaml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8")
+                + "requires:\n  - source\n",
+                encoding="utf-8",
+            )
+            registry = TaskRegistry.from_directory(root, schemas=SCHEMAS)
+
+            self.assertEqual(registry.get("dependent").requires, ["source"])
+            self.assertEqual(
+                [task.id for task in registry.resolve(("source", "dependent"))],
+                ["source", "dependent"],
+            )
+            with self.assertRaisesRegex(
+                InvalidExecutionPlanError,
+                "selected and executed earlier",
+            ) as invalid_plan:
+                registry.resolve(("dependent",))
+            self.assertNotIsInstance(
+                invalid_plan.exception,
+                InvalidTaskDefinitionError,
+            )
+
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace("source\n", "missing\n"),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                InvalidTaskDefinitionError,
+                "requires unknown task.*missing",
+            ):
                 TaskRegistry.from_directory(root, schemas=SCHEMAS)
 
 

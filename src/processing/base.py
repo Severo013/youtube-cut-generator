@@ -56,3 +56,13 @@ class TranscriptProcessor(Protocol):
     def model_for(self, task: TaskDefinition) -> str | None:
         """Return the effective model identifier, when the executor uses one."""
         ...
+
+
+class PromptExecutor(Protocol):
+    """Execute a task using a provider-neutral, fully rendered prompt."""
+
+    def execute_prompt(self, task: TaskDefinition, prompt: str) -> BaseModel:
+        ...
+
+    def model_for(self, task: TaskDefinition) -> str | None:
+        ...

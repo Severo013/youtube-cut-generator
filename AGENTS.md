@@ -19,7 +19,7 @@ normalized Transcript
         ↓
 ProcessingRunner
         ↓
-one or more independent Tasks
+one or more ordered Tasks
         ↓
 task-specific outputs
 ```
@@ -57,10 +57,14 @@ Avoid premature introduction of:
 The current processing model is intentionally:
 
 ```text
-1 Transcript -> N independent tasks
+1 Transcript -> N ordered tasks
 ```
 
-Execution is sequential unless explicitly changed.
+`Transcript` remains the primary input. A task may also declare explicit
+dependencies on earlier task results through `TaskDefinition.requires`.
+Execution remains sequential in the user-selected order. Dependencies are not
+added, reordered, or executed automatically; their results come only from the
+current run's in-memory `ProcessingContext`.
 
 ---
 
@@ -162,9 +166,12 @@ to the main pipeline for normal task registration.
 
 The runner must not directly depend on OpenAI.
 
-Tasks must not mutate the shared Transcript.
+Tasks must not mutate the shared Transcript or previous results.
 
 All selected tasks receive the same logical Transcript.
+
+Dependencies must be selected and executed earlier in the same run. The runner,
+pipeline, CLI, and executors must not contain task-specific dependency branches.
 
 ### Adding a normal task
 

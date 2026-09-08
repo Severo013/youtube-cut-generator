@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from src.models import Transcript, TranscriptSegment
-from src.prompting import load_prompt, render_decupagem_prompt
+from src.prompting import load_prompt, render_decupagem_prompt, render_prompt
 
 
 class PromptingTests(unittest.TestCase):
@@ -52,6 +52,27 @@ class PromptingTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "TRANSCRIPT"):
             render_decupagem_prompt("Sem variável", transcript)
+
+    def test_renders_multiple_repeated_variables_without_recursive_substitution(self) -> None:
+        rendered = render_prompt(
+            "{{TRANSCRIPT}} | {{COUNT}} | {{COUNT}}",
+            {
+                "TRANSCRIPT": "fala com {{COUNT}} literal",
+                "COUNT": "5",
+            },
+        )
+
+        self.assertEqual(
+            rendered,
+            "fala com {{COUNT}} literal | 5 | 5",
+        )
+
+    def test_rejects_unknown_placeholder(self) -> None:
+        with self.assertRaisesRegex(ValueError, "UNKNOWN"):
+            render_prompt(
+                "{{TRANSCRIPT}}\n{{UNKNOWN}}",
+                {"TRANSCRIPT": "texto"},
+            )
 
 
 if __name__ == "__main__":

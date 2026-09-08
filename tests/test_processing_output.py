@@ -6,8 +6,8 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from src.models import IndexBlock, IndexResult
-from src.processing import ProcessingResult, TaskRegistry
-from src.processing.output import ProcessingOutputWriter
+from src.processing import ProcessingResult, TaskDefinition, TaskRegistry
+from src.processing.output import ProcessingOutputWriter, render_index_markdown
 from src.tasks.shorts.models import ShortMoment, ShortsResult
 
 
@@ -113,6 +113,54 @@ class ProcessingOutputTests(unittest.TestCase):
                     encoding="utf-8"
                 ),
             )
+
+    def test_preserves_generic_and_custom_rendering_and_historical_import(self) -> None:
+        class ExampleResult(BaseModel):
+            value: str
+
+        task = TaskDefinition.model_validate(
+            {
+                "id": "example",
+                "name": "Example",
+                "prompt": "prompt.md",
+                "executor": "fake",
+                "schema": "example_result",
+            }
+        )
+        result = ProcessingResult[BaseModel](
+            task_id=task.id,
+            task_name=task.name,
+            executor=task.executor,
+            schema_id=task.schema_id,
+            output=ExampleResult(value="content"),
+        )
+
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            root = Path(temporary_dir)
+            ProcessingOutputWriter().write(root / "generic", task, result)
+            ProcessingOutputWriter(
+                {"example_result": lambda output: f"custom: {output.value}\n"}
+            ).write(root / "custom", task, result)
+
+            self.assertIn(
+                '"value": "content"',
+                (root / "generic" / "processing" / "example" / "result.md").read_text(
+                    encoding="utf-8"
+                ),
+            )
+            self.assertEqual(
+                (root / "custom" / "processing" / "example" / "result.md").read_text(
+                    encoding="utf-8"
+                ),
+                "custom: content\n",
+            )
+
+        self.assertEqual(
+            render_index_markdown(make_index()),
+            "# Indexação do episódio\n\n"
+            "## 00:00:05 - 00:00:18 — Tema de teste\n\n"
+            "Resumo do assunto abordado.\n",
+        )
 
 
 if __name__ == "__main__":

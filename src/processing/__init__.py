@@ -6,11 +6,13 @@ from .base import (
     ProcessingConfigurationError,
     ProcessingError,
     ProcessingProviderError,
+    PromptExecutor,
     TaskExecutionError,
     TranscriptProcessor,
     UnknownExecutorError,
 )
-from .models import ProcessingResult, TaskDefinition
+from .models import ProcessingContext, ProcessingResult, TaskDefinition
+from .prompting import build_prompt_variables
 from .output import ProcessingOutputWriter
 from .registry import (
     DuplicateTaskIdError,
@@ -20,6 +22,7 @@ from .registry import (
     TaskRegistryError,
 )
 from .runner import ProcessingRunner
+from .validation import InvalidExecutionPlanError, validate_execution_plan
 
 __all__ = [
     "DuplicateTaskIdError",
@@ -27,11 +30,13 @@ __all__ = [
     "InvalidProcessingResultError",
     "InvalidTaskDefinitionError",
     "ProcessingConfigurationError",
+    "ProcessingContext",
     "ProcessingError",
     "ProcessingProviderError",
     "ProcessingResult",
     "ProcessingRunner",
     "ProcessingOutputWriter",
+    "PromptExecutor",
     "TaskDefinition",
     "TaskExecutionError",
     "TaskNotFoundError",
@@ -39,4 +44,7 @@ __all__ = [
     "TaskRegistryError",
     "TranscriptProcessor",
     "UnknownExecutorError",
+    "InvalidExecutionPlanError",
+    "build_prompt_variables",
+    "validate_execution_plan",
 ]

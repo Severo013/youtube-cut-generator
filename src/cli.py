@@ -150,7 +150,7 @@ def _build_runner(settings: Settings) -> ProcessingRunner:
         api_key=settings.openai_api_key,
         default_model=settings.index_model,
     )
-    return ProcessingRunner({"openai": openai_processor})
+    return ProcessingRunner(executors={"openai": openai_processor})
 
 
 def run_transcription(

@@ -14,6 +14,7 @@ from pydantic import BaseModel, ValidationError
 from src.models import IndexResult
 from src.processing.base import ProcessingConfigurationError
 from src.processing.models import TaskDefinition
+from src.processing.validation import validate_execution_plan
 from src.tasks.shorts.models import ShortsResult
 
 
@@ -48,6 +49,17 @@ class TaskRegistry:
             if task.id in self._tasks:
                 raise DuplicateTaskIdError(f"Id de task duplicado: {task.id}")
             self._tasks[task.id] = task
+        self._validate_declared_dependencies()
+
+    def _validate_declared_dependencies(self) -> None:
+        known_task_ids = self._tasks.keys()
+        for task in self._tasks.values():
+            for dependency_id in task.requires:
+                if dependency_id not in known_task_ids:
+                    raise InvalidTaskDefinitionError(
+                        f"Task {task.id!r} requires unknown task "
+                        f"{dependency_id!r}."
+                    )
 
     @classmethod
     def load_builtin(cls) -> "TaskRegistry":
@@ -172,7 +184,9 @@ class TaskRegistry:
     def resolve(self, task_ids: Sequence[str]) -> list[TaskDefinition]:
         """Resolve task ids in the requested order before execution begins."""
 
-        return [self.get(task_id) for task_id in task_ids]
+        tasks = [self.get(task_id) for task_id in task_ids]
+        validate_execution_plan(tasks)
+        return tasks
 
     def all(self) -> tuple[TaskDefinition, ...]:
         return tuple(self._tasks.values())
