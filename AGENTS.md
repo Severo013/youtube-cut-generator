@@ -24,7 +24,7 @@ one or more ordered Tasks
 task-specific outputs
 ```
 
-Current tasks include `indexacao` and `shorts`.
+Current tasks include `indexacao`, `shorts`, and `cortes`.
 
 Reliability and preservation of existing production behavior are more important than architectural novelty.
 
@@ -134,6 +134,7 @@ Examples:
 
 - `indexacao`
 - `shorts`
+- `cortes`, which explicitly requires the current run's `indexacao` result
 
 A Task describes **what** should be done.
 

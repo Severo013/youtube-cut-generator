@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from src.models import IndexResult, seconds_to_timestamp
 from src.processing.models import ProcessingResult, TaskDefinition
+from src.tasks.cortes.models import CutsResult
 from src.tasks.shorts.models import ShortsResult
 
 
@@ -57,6 +58,36 @@ def render_shorts_markdown(output: BaseModel) -> str:
     return "\n".join(sections) + "\n"
 
 
+def render_cuts_markdown(output: BaseModel) -> str:
+    result = CutsResult.model_validate(output)
+    sections = ["# Seleção de Cortes"]
+    for position, cut in enumerate(result.cuts, start=1):
+        sections.extend(
+            [
+                "",
+                f"## Corte {position} — {cut.title}",
+                "",
+                f"**Início:** {seconds_to_timestamp(cut.start_seconds)}",
+                "",
+                f"**Fim:** {seconds_to_timestamp(cut.end_seconds)}",
+                "",
+                f"**Duração:** {seconds_to_timestamp(cut.duration_seconds)}",
+                "",
+                f"**Tema:** {cut.theme}",
+                "",
+                f"**Resumo:** {cut.summary}",
+                "",
+                f"**Título:** {cut.title}",
+                "",
+                f"**Frase para thumbnail:** {cut.thumbnail_text}",
+            ]
+        )
+    if result.limitations:
+        sections.extend(["", "## Limitações"])
+        sections.extend(f"- {limitation}" for limitation in result.limitations)
+    return "\n".join(sections) + "\n"
+
+
 def _render_generic_markdown(task_name: str, output: BaseModel) -> str:
     payload = json.dumps(
         output.model_dump(mode="json"),
@@ -73,6 +104,7 @@ def render_generic_markdown(task: TaskDefinition, output: BaseModel) -> str:
 
 
 DEFAULT_MARKDOWN_RENDERERS: Mapping[str, MarkdownRenderer] = {
+    "cuts_result": render_cuts_markdown,
     "index_result": render_index_markdown,
     "shorts_result": render_shorts_markdown,
 }

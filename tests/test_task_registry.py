@@ -12,6 +12,7 @@ from src.processing import (
     TaskRegistry,
     TaskDefinition,
 )
+from src.tasks.cortes.models import CutsResult
 from src.tasks.shorts.models import ShortsResult
 
 
@@ -70,12 +71,16 @@ class TaskRegistryTests(unittest.TestCase):
         self.assertTrue(shorts_root.joinpath("task.yaml").is_file())
         self.assertTrue(shorts_root.joinpath("prompt.md").is_file())
 
+        cortes = registry.get("cortes")
+        self.assertEqual(cortes.schema_id, "cuts_result")
+        self.assertIs(cortes.result_type, CutsResult)
+
     def test_rejects_unknown_task(self) -> None:
         registry = TaskRegistry.load_builtin()
 
         with self.assertRaisesRegex(
             TaskNotFoundError,
-            "Unknown task: xyz\nAvailable tasks: indexacao, shorts",
+            "Unknown task: xyz\nAvailable tasks: cortes, indexacao, shorts",
         ):
             registry.get("xyz")
 

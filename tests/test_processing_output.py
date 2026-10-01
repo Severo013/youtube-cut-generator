@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from src.models import IndexBlock, IndexResult
 from src.processing import ProcessingResult, TaskDefinition, TaskRegistry
 from src.processing.output import ProcessingOutputWriter, render_index_markdown
+from src.tasks.cortes.models import CutSelection, CutsResult
 from src.tasks.shorts.models import ShortMoment, ShortsResult
 
 
@@ -161,6 +162,50 @@ class ProcessingOutputTests(unittest.TestCase):
             "## 00:00:05 - 00:00:18 — Tema de teste\n\n"
             "Resumo do assunto abordado.\n",
         )
+
+    def test_writes_cortes_payload_and_markdown_with_calculated_duration(self) -> None:
+        task = TaskRegistry.load_builtin().get("cortes")
+        result = ProcessingResult[BaseModel](
+            task_id=task.id,
+            task_name=task.name,
+            executor=task.executor,
+            schema_id=task.schema_id,
+            output=CutsResult(
+                cuts=[
+                    CutSelection(
+                        start_seconds=300,
+                        end_seconds=900,
+                        theme="Tema do corte",
+                        summary="Resumo do corte",
+                        title="TÍTULO DO CORTE",
+                        thumbnail_text="FRASE DA THUMBNAIL",
+                    )
+                ],
+                limitations=["Apenas uma opção válida."],
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            root = Path(temporary_dir)
+            ProcessingOutputWriter().write(root, task, result)
+
+            payload = json.loads(
+                (root / "processing" / "cortes" / "result.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            markdown = (
+                root / "processing" / "cortes" / "result.md"
+            ).read_text(encoding="utf-8")
+
+            self.assertEqual(payload["cuts"][0]["start_seconds"], 300)
+            self.assertNotIn("duration", payload["cuts"][0])
+            self.assertIn("**Início:** 00:05:00", markdown)
+            self.assertIn("**Fim:** 00:15:00", markdown)
+            self.assertIn("**Duração:** 00:10:00", markdown)
+            self.assertIn("## Limitações", markdown)
+            self.assertFalse((root / "cuts.json").exists())
+            self.assertFalse((root / "cuts.md").exists())
 
 
 if __name__ == "__main__":

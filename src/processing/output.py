@@ -13,6 +13,7 @@ from src.processing.rendering import (
     MarkdownRenderer,
     build_markdown_renderers,
     render_generic_markdown,
+    render_cuts_markdown,
     render_index_markdown,
     render_processing_result,
     render_shorts_markdown,

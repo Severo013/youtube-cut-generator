@@ -179,6 +179,28 @@ class CliTests(unittest.TestCase):
         self.assertEqual([task.id for task in tasks], ["indexacao"])
         create_transcriber.assert_called_once()
 
+    @patch("src.cli.PodcastPipeline")
+    @patch("src.cli.create_transcriber")
+    def test_process_accepts_indexacao_followed_by_cortes(
+        self,
+        create_transcriber,
+        pipeline_constructor,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            audio_path = Path(temporary_dir) / "episode.mp3"
+            audio_path.write_bytes(b"audio")
+
+            run_process(
+                audio_path,
+                Path(temporary_dir) / "outputs",
+                Settings(),
+                task_ids=["indexacao", "cortes"],
+            )
+
+        tasks = pipeline_constructor.for_processing.return_value.run_tasks.call_args.args[1]
+        self.assertEqual([task.id for task in tasks], ["indexacao", "cortes"])
+        create_transcriber.assert_called_once()
+
     @patch("src.cli.create_transcriber")
     @patch("src.cli.InputResolver")
     @patch("src.cli.OpenAITranscriptProcessor")
@@ -199,7 +221,7 @@ class CliTests(unittest.TestCase):
         ) as whisper_constructor:
             with self.assertRaisesRegex(
                 TaskNotFoundError,
-                "Unknown task: xyz\nAvailable tasks: indexacao, shorts",
+                "Unknown task: xyz\nAvailable tasks: cortes, indexacao, shorts",
             ):
                 run_process(
                     "https://example.com/video",
@@ -279,6 +301,59 @@ class CliTests(unittest.TestCase):
         whisper_constructor.assert_not_called()
         self.assertEqual(output_dir, transcript_path.parent)
 
+    @patch("src.cli.PodcastPipeline")
+    @patch("src.cli.create_transcriber")
+    @patch("src.cli.InputResolver")
+    @patch("src.cli.OpenAITranscriptProcessor")
+    def test_process_transcript_resolves_indexacao_cortes_without_media_components(
+        self,
+        processor_constructor,
+        resolver_constructor,
+        create_transcriber,
+        pipeline_constructor,
+    ) -> None:
+        transcript_path = Path("outputs/episode/transcript.json")
+
+        output_dir = run_process_transcript(
+            transcript_path,
+            Settings(),
+            task_ids=["indexacao", "cortes"],
+        )
+
+        tasks = (
+            pipeline_constructor.for_processing.return_value.process_transcript_file
+            .call_args.args[1]
+        )
+        self.assertEqual([task.id for task in tasks], ["indexacao", "cortes"])
+        processor_constructor.assert_called_once()
+        resolver_constructor.assert_not_called()
+        create_transcriber.assert_not_called()
+        self.assertEqual(output_dir, transcript_path.parent)
+
+    @patch("src.cli.create_transcriber")
+    @patch("src.cli.InputResolver")
+    @patch("src.cli.OpenAITranscriptProcessor")
+    def test_cortes_without_prior_indexacao_fails_before_expensive_components(
+        self,
+        processor_constructor,
+        resolver_constructor,
+        create_transcriber,
+    ) -> None:
+        for task_ids in (["cortes"], ["cortes", "indexacao"]):
+            with self.subTest(task_ids=task_ids), self.assertRaises(
+                InvalidExecutionPlanError
+            ):
+                run_process(
+                    "https://example.com/video",
+                    Path("outputs"),
+                    Settings(),
+                    task_ids=task_ids,
+                )
+
+        processor_constructor.assert_not_called()
+        resolver_constructor.assert_not_called()
+        create_transcriber.assert_not_called()
+
     def test_list_tasks_comes_from_registry(self) -> None:
         output = io.StringIO()
 
@@ -288,6 +363,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(
             output.getvalue(),
             "Available tasks:\n\n"
+            "* cortes — Seleção de Cortes\n"
             "* indexacao — Indexação do episódio\n"
             "* shorts — Seleção de Shorts\n",
         )

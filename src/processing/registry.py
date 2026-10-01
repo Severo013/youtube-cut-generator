@@ -15,10 +15,12 @@ from src.models import IndexResult
 from src.processing.base import ProcessingConfigurationError
 from src.processing.models import TaskDefinition
 from src.processing.validation import validate_execution_plan
+from src.tasks.cortes.models import CutsResult
 from src.tasks.shorts.models import ShortsResult
 
 
 DEFAULT_TASK_SCHEMAS: Mapping[str, type[BaseModel]] = {
+    "cuts_result": CutsResult,
     "index_result": IndexResult,
     "shorts_result": ShortsResult,
 }

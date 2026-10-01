@@ -91,7 +91,13 @@ class ProcessingRunner:
                         transcript,
                         formatted_transcript,
                     )
-                validated_output = task.result_type.model_validate(output)
+                validated_output = task.result_type.model_validate(
+                    output,
+                    context={
+                        "task_definition": task,
+                        "processing_context": context,
+                    },
+                )
                 model_resolver = getattr(processor, "model_for", None)
                 effective_model = (
                     model_resolver(task) if callable(model_resolver) else task.model

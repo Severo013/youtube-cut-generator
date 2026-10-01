@@ -1,0 +1,13 @@
+id: cortes
+name: Seleção de Cortes
+prompt: prompt.md
+executor: openai
+schema: cuts_result
+
+requires:
+  - indexacao
+
+settings:
+  target_count: 5
+  min_duration_minutes: 5
+  max_duration_minutes: 20

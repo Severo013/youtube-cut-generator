@@ -141,9 +141,6 @@ Use o seguinte formato:
 **Tema termina em:**
 [HH:MM:SS]
 
-**Duração aproximada:**
-[XX minutos]
-
 **Resumo do bloco:**
 [RESUMO CURTO E FIEL DO QUE FOI DISCUTIDO]
 

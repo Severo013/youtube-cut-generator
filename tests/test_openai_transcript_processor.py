@@ -11,6 +11,7 @@ from src.processing import (
     TaskRegistry,
 )
 from src.processing.openai_processor import OpenAITranscriptProcessor
+from src.tasks.cortes.models import CutsResult
 from src.tasks.shorts.models import ShortsResult
 
 
@@ -199,6 +200,39 @@ class OpenAITranscriptProcessorTests(unittest.TestCase):
             "ProcessingRunner.*context",
         ):
             processor.process(task, transcript, transcript.as_timestamped_text())
+
+    def test_executes_cortes_through_the_same_structured_output_contract(self) -> None:
+        task = TaskRegistry.load_builtin().get("cortes")
+        client = Mock()
+        client.responses.parse.return_value = SimpleNamespace(
+            output_parsed={
+                "cuts": [
+                    {
+                        "start_seconds": 0,
+                        "end_seconds": 600,
+                        "theme": "Tema",
+                        "summary": "Resumo",
+                        "title": "TÍTULO",
+                        "thumbnail_text": "FRASE CURTA",
+                    }
+                ],
+                "limitations": ["Uma opção válida."],
+            }
+        )
+        processor = OpenAITranscriptProcessor(
+            api_key="test-key",
+            default_model="gpt-5-mini",
+            client=client,
+        )
+
+        result = processor.execute_prompt(task, "prompt já renderizado")
+
+        self.assertIsInstance(result, CutsResult)
+        client.responses.parse.assert_called_once_with(
+            model="gpt-5-mini",
+            input="prompt já renderizado",
+            text_format=CutsResult,
+        )
 
 
 if __name__ == "__main__":
